@@ -1,0 +1,58 @@
+name: Bobby TAIS Sentinel
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # detect+act a cada 15 min
+    - cron: '0 22 * * *'     # 19h BRT (UTC-3) = 22 UTC → digest diário
+  workflow_dispatch:
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout mission-control
+        uses: actions/checkout@v4
+        with:
+          path: mission-control
+
+      - name: Checkout tais-edge
+        uses: actions/checkout@v4
+        with:
+          repository: terserv/tais-edge
+          token: ${{ secrets.GH_PAT }}
+          path: tais-edge
+        continue-on-error: true  # remote pode não existir ainda
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install anthropic supabase requests
+
+      - name: Run Bobby
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: https://rixnvftlzhfkavbfcipn.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_MONITOR: ${{ secrets.TELEGRAM_CHAT_MONITOR }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          IS_DIGEST: ${{ github.event.schedule == '0 22 * * *' }}
+          TAIS_EDGE_PATH: ${{ github.workspace }}/tais-edge
+        run: python mission-control/agents/bobby/sentinel.py
