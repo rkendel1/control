@@ -18,7 +18,6 @@ use tauri::{
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_fs_extra::init())
         .setup(|app| {
             // Initialize Control core
             let app_handle = app.handle();
@@ -73,9 +72,13 @@ fn main() {
             commands::cmd_runtimes_list,
             commands::cmd_workspaces_list,
             commands::cmd_git_status,
+            commands::cmd_git_stage,
+            commands::cmd_git_commit,
             commands::cmd_explorer_tree,
             commands::cmd_file_save,
             commands::cmd_file_read,
+            commands::cmd_terminal_create_session,
+            commands::cmd_terminal_execute,
             cmd_daemon_status,
             cmd_open_project_folder,
         ])

@@ -8,7 +8,7 @@ rust-version = "1.70"
 license = "MIT"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -26,10 +26,8 @@ walkdir = "2"
 git2 = "0.19"
 sysinfo = "0.30"
 which = "6"
-tauri = { version = "1.5", features = ["shell-open", "system-tray", "global-shortcut"] }
-tauri-plugin-single-instance = { version = "0.0", optional = true }
-tauri-plugin-store = "1"
-tauri-plugin-fs-extra = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-store = "2"
 nix = { version = "0.27", features = ["process"] }
 
 [target.'cfg(unix)'.dependencies]
@@ -37,10 +35,6 @@ pam = "0.7"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.51", features = ["Win32_Foundation"] }
-
-[[bin]]
-name = "control-daemon"
-path = "src/bin/daemon.rs"
 
 [lib]
 name = "control"

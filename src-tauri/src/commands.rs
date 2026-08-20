@@ -280,47 +280,46 @@ impl WorkspaceDTO {
 pub async fn cmd_git_status(
     workspace_path: String,
 ) -> Result<CommandResponse<GitStatusDTO>, String> {
-    // Mock implementation - will integrate with git manager
-    Ok(CommandResponse::ok(GitStatusDTO {
-        branch: "main".to_string(),
-        ahead: 0,
-        behind: 0,
-        is_clean: true,
-        files: vec![],
-        staged: vec![],
-    }))
+    match crate::git::GitManager::status(&workspace_path) {
+        Ok(status) => {
+            let files = status
+                .files
+                .into_iter()
+                .map(|(_, file_status)| GitFileStatusDTO {
+                    path: file_status.path,
+                    status: file_status.status,
+                    staged_status: file_status.staged_status,
+                })
+                .collect();
+
+            Ok(CommandResponse::ok(GitStatusDTO {
+                branch: status.branch,
+                ahead: status.ahead,
+                behind: status.behind,
+                is_clean: status.is_clean,
+                files,
+                staged: status.staged,
+            }))
+        }
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
 }
 
 #[tauri::command]
 pub async fn cmd_explorer_tree(
     workspace_path: String,
 ) -> Result<CommandResponse<Vec<ExplorerNodeDTO>>, String> {
-    // Mock implementation - will scan filesystem
-    let mock_tree = vec![
-        ExplorerNodeDTO {
-            id: "src".to_string(),
-            path: "src".to_string(),
-            name: "src".to_string(),
-            node_type: "folder".to_string(),
-            children: Some(vec![
-                ExplorerNodeDTO {
-                    id: "src-main".to_string(),
-                    path: "src/main.rs".to_string(),
-                    name: "main.rs".to_string(),
-                    node_type: "file".to_string(),
-                    children: None,
-                },
-            ]),
-        },
-        ExplorerNodeDTO {
-            id: "Cargo.toml".to_string(),
-            path: "Cargo.toml".to_string(),
-            name: "Cargo.toml".to_string(),
-            node_type: "file".to_string(),
-            children: None,
-        },
-    ];
-    Ok(CommandResponse::ok(mock_tree))
+    let file_manager = crate::file::FileManager::new(&workspace_path);
+    match file_manager.build_tree(3).await {
+        Ok(tree) => {
+            let dto_tree: Vec<ExplorerNodeDTO> = tree
+                .into_iter()
+                .map(|node| ExplorerNodeDTO::from_tree_node(node))
+                .collect();
+            Ok(CommandResponse::ok(dto_tree))
+        }
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
 }
 
 #[tauri::command]
@@ -329,8 +328,11 @@ pub async fn cmd_file_save(
     file_path: String,
     content: String,
 ) -> Result<CommandResponse<bool>, String> {
-    // Will implement actual file save
-    Ok(CommandResponse::ok(true))
+    let file_manager = crate::file::FileManager::new(&workspace_path);
+    match file_manager.write(&file_path, &content).await {
+        Ok(_) => Ok(CommandResponse::ok(true)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
 }
 
 #[tauri::command]
@@ -338,8 +340,11 @@ pub async fn cmd_file_read(
     workspace_path: String,
     file_path: String,
 ) -> Result<CommandResponse<String>, String> {
-    // Will implement actual file read
-    Ok(CommandResponse::ok("".to_string()))
+    let file_manager = crate::file::FileManager::new(&workspace_path);
+    match file_manager.read(&file_path).await {
+        Ok(content) => Ok(CommandResponse::ok(content)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
 }
 
 // ─── DTOs for Workbench ──────────────────────────────────────────
@@ -369,4 +374,72 @@ pub struct ExplorerNodeDTO {
     #[serde(rename = "type")]
     pub node_type: String,
     pub children: Option<Vec<ExplorerNodeDTO>>,
+}
+
+impl ExplorerNodeDTO {
+    pub fn from_tree_node(node: crate::file::TreeNode) -> Self {
+        let node_type = if node.is_dir { "folder" } else { "file" }.to_string();
+        let children = node.children.map(|children| {
+            children.into_iter().map(ExplorerNodeDTO::from_tree_node).collect()
+        });
+
+        Self {
+            id: node.id,
+            path: node.path,
+            name: node.name,
+            node_type,
+            children,
+        }
+    }
+}
+
+// ─── Git Commands ───────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn cmd_git_stage(
+    workspace_path: String,
+    file_path: String,
+) -> Result<CommandResponse<bool>, String> {
+    match crate::git::GitManager::stage_file(&workspace_path, &file_path) {
+        Ok(_) => Ok(CommandResponse::ok(true)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn cmd_git_commit(
+    workspace_path: String,
+    message: String,
+) -> Result<CommandResponse<String>, String> {
+    match crate::git::GitManager::commit(&workspace_path, &message) {
+        Ok(commit_id) => Ok(CommandResponse::ok(commit_id)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
+
+// ─── Terminal Commands ──────────────────────────────────────────
+
+#[tauri::command]
+pub async fn cmd_terminal_create_session(
+    name: String,
+    cwd: String,
+) -> Result<CommandResponse<String>, String> {
+    let manager = crate::terminal::TerminalManager::new();
+    match manager.create_session(name, cwd).await {
+        Ok(session_id) => Ok(CommandResponse::ok(session_id)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn cmd_terminal_execute(
+    session_id: String,
+    command: String,
+    cwd: String,
+) -> Result<CommandResponse<String>, String> {
+    let manager = crate::terminal::TerminalManager::new();
+    match manager.execute_command(&session_id, &command, &cwd).await {
+        Ok(output) => Ok(CommandResponse::ok(output)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
 }

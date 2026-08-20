@@ -2,11 +2,13 @@
 
 pub mod agent;
 pub mod error;
+pub mod file;
 pub mod git;
 pub mod memory;
 pub mod project;
 pub mod runtime;
 pub mod task;
+pub mod terminal;
 pub mod workspace;
 
 pub use error::{ControlError, Result};
