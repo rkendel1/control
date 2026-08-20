@@ -1,22 +1,23 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useContext } from "react";
+import { invoke } from "@tauri-apps/api/tauri";
+import { WorkspaceContext } from "@/hooks/useWorkspace";
 import "./SearchPanel.css";
 
 interface SearchResult {
   id: string;
-  file: string;
-  line: number;
-  column: number;
-  preview: string;
-  lineText: string;
+  file_path: string;
+  line_number: number;
+  line: string;
 }
 
 interface SearchPanelProps {
-  onResultClick: (file: string, line: number, column: number) => void;
+  onResultClick: (file: string, line: number) => void;
 }
 
 export default function SearchPanel({ onResultClick }: SearchPanelProps) {
+  const workspace = useContext(WorkspaceContext);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -25,8 +26,8 @@ export default function SearchPanel({ onResultClick }: SearchPanelProps) {
   const [regex, setRegex] = useState(false);
 
   const handleSearch = useCallback(
-    (searchTerm: string) => {
-      if (!searchTerm.trim()) {
+    async (searchTerm: string) => {
+      if (!searchTerm.trim() || !workspace?.currentWorkspace) {
         setResults([]);
         return;
       }
@@ -34,44 +35,34 @@ export default function SearchPanel({ onResultClick }: SearchPanelProps) {
       setIsSearching(true);
       setQuery(searchTerm);
 
-      // Mock search results
-      const mockResults: SearchResult[] = [
-        {
-          id: "result-1",
-          file: "src/recovery.rs",
-          line: 42,
-          column: 5,
-          preview: "pub struct RecoveryOrchestrator {",
-          lineText: "pub struct RecoveryOrchestrator {",
-        },
-        {
-          id: "result-2",
-          file: "src/transaction.rs",
-          line: 184,
-          column: 12,
-          preview: "RecoveryOrchestrator::new()",
-          lineText: "  let orchestrator = RecoveryOrchestrator::new();",
-        },
-        {
-          id: "result-3",
-          file: "tests/recovery_test.rs",
-          line: 22,
-          column: 8,
-          preview: "let orchestrator = RecoveryOrchestrator::default();",
-          lineText: "  let orchestrator = RecoveryOrchestrator::default();",
-        },
-      ];
+      try {
+        const response = await invoke<any>("cmd_search", {
+          workspace_path: workspace.currentWorkspace.path,
+          pattern: searchTerm,
+          include_patterns: null,
+        });
 
-      const filtered = mockResults.filter((r) =>
-        caseSensitive
-          ? r.lineText.includes(searchTerm)
-          : r.lineText.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-
-      setResults(filtered);
-      setIsSearching(false);
+        if (response.success && response.data) {
+          const searchResults: SearchResult[] = response.data.map(
+            (r: any, idx: number) => ({
+              id: `result-${idx}`,
+              file_path: r.file_path,
+              line_number: r.line_number,
+              line: r.line,
+            })
+          );
+          setResults(searchResults);
+        } else {
+          setResults([]);
+        }
+      } catch (error) {
+        console.error("Search failed:", error);
+        setResults([]);
+      } finally {
+        setIsSearching(false);
+      }
     },
-    [caseSensitive]
+    [workspace?.currentWorkspace]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -142,15 +133,15 @@ export default function SearchPanel({ onResultClick }: SearchPanelProps) {
                 key={result.id}
                 className="result-item"
                 onClick={() =>
-                  onResultClick(result.file, result.line, result.column)
+                  onResultClick(result.file_path, result.line_number)
                 }
               >
                 <div className="result-location">
-                  <span className="file-name">{result.file}</span>
-                  <span className="line-number">:{result.line}</span>
+                  <span className="file-name">{result.file_path}</span>
+                  <span className="line-number">:{result.line_number}</span>
                 </div>
                 <div className="result-preview">
-                  <code>{result.lineText}</code>
+                  <code>{result.line}</code>
                 </div>
               </div>
             ))}
