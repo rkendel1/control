@@ -33,30 +33,38 @@ interface ResolvedBinary {
 let cachedBinary: ResolvedBinary | null = null;
 
 /**
- * Resolve the JS entry point from an npm .cmd shim file.
+ * Resolve the underlying target from an npm .cmd shim file.
  * npm .cmd files contain: "%_prog%" "%dp0%\node_modules\...\cli.js" %*
- * We extract the relative path and resolve it.
+ * Newer Claude Code installs bundle a native binary instead:
+ * "%dp0%\node_modules\...\bin\claude.exe" %*
+ * We extract the relative path and resolve it, reporting whether it's a
+ * JS entry point (needs node.exe as the interpreter) or a native .exe
+ * (spawned directly).
  */
-function resolveJsFromCmd(cmdPath: string): string | null {
+function resolveTargetFromCmd(cmdPath: string): { path: string; isJs: boolean } | null {
   try {
     const content = readFileSync(cmdPath, "utf-8");
-    // Match the pattern: "%dp0%\node_modules\...\cli.js" or similar
-    const match = content.match(/%dp0%\\([^"]+\.js)/i) ||
-                  content.match(/%dp0%\\([^\s"]+\.js)/i);
+    // Match the pattern: "%dp0%\node_modules\...\cli.js" or "...\claude.exe"
+    const match = content.match(/%dp0%\\([^"]+\.(?:js|exe))/i) ||
+                  content.match(/%dp0%\\([^\s"]+\.(?:js|exe))/i);
     if (match) {
       const dir = path.dirname(cmdPath);
-      const jsPath = path.join(dir, match[1]);
-      if (existsSync(jsPath)) {
-        return jsPath;
+      const targetPath = path.join(dir, match[1]);
+      if (existsSync(targetPath)) {
+        return { path: targetPath, isJs: targetPath.toLowerCase().endsWith(".js") };
       }
     }
   } catch { /* couldn't read .cmd file */ }
 
   // Fallback: check the standard npm global structure
   const dir = path.dirname(cmdPath);
-  const standard = path.join(dir, "node_modules", "@anthropic-ai", "claude-code", "cli.js");
-  if (existsSync(standard)) {
-    return standard;
+  const standardJs = path.join(dir, "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+  if (existsSync(standardJs)) {
+    return { path: standardJs, isJs: true };
+  }
+  const standardExe = path.join(dir, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+  if (existsSync(standardExe)) {
+    return { path: standardExe, isJs: false };
   }
 
   return null;
@@ -112,16 +120,25 @@ function findClaudeBinary(): ResolvedBinary {
     if (candidate && existsSync(candidate)) {
       logger.info("runner", `Found claude at: ${candidate}`);
 
-      // On Windows, .cmd shims can't be spawned directly — resolve the JS entry point
+      // On Windows, .cmd shims can't be spawned directly — resolve the real target
       if (candidate.endsWith(".cmd")) {
-        const jsEntry = resolveJsFromCmd(candidate);
-        if (jsEntry) {
-          logger.info("runner", `Resolved .cmd shim → ${jsEntry} (via node.exe)`);
-          cachedBinary = {
-            bin: process.execPath, // node.exe
-            prefixArgs: [jsEntry],
-            originalPath: candidate,
-          };
+        const resolved = resolveTargetFromCmd(candidate);
+        if (resolved) {
+          if (resolved.isJs) {
+            logger.info("runner", `Resolved .cmd shim → ${resolved.path} (via node.exe)`);
+            cachedBinary = {
+              bin: process.execPath, // node.exe
+              prefixArgs: [resolved.path],
+              originalPath: candidate,
+            };
+          } else {
+            logger.info("runner", `Resolved .cmd shim → ${resolved.path} (native binary)`);
+            cachedBinary = {
+              bin: resolved.path,
+              prefixArgs: [],
+              originalPath: candidate,
+            };
+          }
           return cachedBinary;
         }
       }
@@ -142,14 +159,23 @@ function findClaudeBinary(): ResolvedBinary {
       logger.info("runner", `Found claude via PATH: ${result}`);
 
       if (result.endsWith(".cmd")) {
-        const jsEntry = resolveJsFromCmd(result);
-        if (jsEntry) {
-          logger.info("runner", `Resolved .cmd shim → ${jsEntry} (via node.exe)`);
-          cachedBinary = {
-            bin: process.execPath,
-            prefixArgs: [jsEntry],
-            originalPath: result,
-          };
+        const resolved = resolveTargetFromCmd(result);
+        if (resolved) {
+          if (resolved.isJs) {
+            logger.info("runner", `Resolved .cmd shim → ${resolved.path} (via node.exe)`);
+            cachedBinary = {
+              bin: process.execPath,
+              prefixArgs: [resolved.path],
+              originalPath: result,
+            };
+          } else {
+            logger.info("runner", `Resolved .cmd shim → ${resolved.path} (native binary)`);
+            cachedBinary = {
+              bin: resolved.path,
+              prefixArgs: [],
+              originalPath: result,
+            };
+          }
           return cachedBinary;
         }
       }
