@@ -10,6 +10,11 @@ coverage/
 .vercel/
 tsconfig.tsbuildinfo
 
+# Build outputs
+src-tauri/target/
+src-tauri/Cargo.lock
+src-ui/node_modules/
+
 # Claude personal settings (not shared)
 .claude/settings.local.json
 .claude/projects/
