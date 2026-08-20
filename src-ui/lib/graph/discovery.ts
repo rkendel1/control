@@ -9,6 +9,7 @@
  * 5. Populates project graph with initial entities
  */
 
+import { invoke } from "@tauri-apps/api/core";
 import type {
   GraphRepository,
   GraphId,
@@ -83,7 +84,10 @@ export class ProjectDiscovery {
         });
 
         // 3. Index Git branches
-        const branches = await this.discoverGitBranches(projectPath);
+        const branches = await this.discoverGitBranches(
+          projectPath,
+          repoMetadata.defaultBranch || "main"
+        );
         for (const branch of branches) {
           const branchEntity = await graphRepo.addEntity(graphId, {
             type: "Branch",
@@ -168,46 +172,18 @@ export class ProjectDiscovery {
     projectPath: string
   ): Promise<RepositoryMetadata | null> {
     try {
-      // Check if .git directory exists
-      const gitDirPath = `${projectPath}/.git`;
+      const response: { success: boolean; data?: any; error?: string } =
+        await invoke("cmd_detect_repository", { projectPath });
 
-      // Try to detect git using simple heuristics
-      // In production, use @gitmoji/git or similar
-      const isGit = await this.fileExists(gitDirPath);
-
-      if (!isGit) {
+      if (!response.success || !response.data) {
         return null;
       }
 
-      // Try to read git config for remote URL
-      let remoteUrl: string | undefined;
-      try {
-        const configPath = `${projectPath}/.git/config`;
-        const configContent = await this.readFileContent(configPath);
-        const remoteMatch = configContent.match(/url = (.+)/);
-        remoteUrl = remoteMatch ? remoteMatch[1] : undefined;
-      } catch {
-        // Ignore if we can't read config
-      }
-
-      // Get default branch (try common ones first)
-      let defaultBranch = "main";
-      const headRefPath = `${projectPath}/.git/HEAD`;
-      try {
-        const headContent = await this.readFileContent(headRefPath);
-        const branchMatch = headContent.match(/ref: refs\/heads\/(.+)/);
-        if (branchMatch) {
-          defaultBranch = branchMatch[1];
-        }
-      } catch {
-        // Use default
-      }
-
       return {
-        path: projectPath,
-        isGitRepository: true,
-        defaultBranch,
-        remoteUrl,
+        path: response.data.path,
+        isGitRepository: response.data.is_git,
+        defaultBranch: response.data.default_branch,
+        remoteUrl: response.data.remote_url,
       };
     } catch (error) {
       console.warn(`Failed to detect git repository at ${projectPath}:`, error);
@@ -218,54 +194,18 @@ export class ProjectDiscovery {
   // ─── Git Branches ────────────────────────────────────────────
 
   private static async discoverGitBranches(
-    projectPath: string
+    projectPath: string,
+    defaultBranch: string = "main"
   ): Promise<GitBranchInfo[]> {
-    try {
-      const branches: GitBranchInfo[] = [];
-
-      // Check common branch names
-      const commonBranches = ["main", "master", "develop"];
-      const headRefPath = `${projectPath}/.git/HEAD`;
-
-      let defaultBranch = "main";
-      try {
-        const headContent = await this.readFileContent(headRefPath);
-        const match = headContent.match(/ref: refs\/heads\/(.+)/);
-        if (match) {
-          defaultBranch = match[1];
-        }
-      } catch {
-        // Use default
-      }
-
-      for (const branch of commonBranches) {
-        const branchPath = `${projectPath}/.git/refs/heads/${branch}`;
-        if (await this.fileExists(branchPath)) {
-          branches.push({
-            name: branch,
-            isDefault: branch === defaultBranch,
-            head: branch,
-          });
-        }
-      }
-
-      // If no common branches found, at least return current branch
-      if (branches.length === 0) {
-        branches.push({
-          name: defaultBranch,
-          isDefault: true,
-          head: defaultBranch,
-        });
-      }
-
-      return branches;
-    } catch (error) {
-      console.warn(
-        `Failed to discover git branches at ${projectPath}:`,
-        error
-      );
-      return [];
-    }
+    // For now, just return the default branch from the repository
+    // In production, could use a git library to enumerate all branches
+    return [
+      {
+        name: defaultBranch,
+        isDefault: true,
+        head: defaultBranch,
+      },
+    ];
   }
 
   // ─── Git Commits ──────────────────────────────────────────────
@@ -285,7 +225,17 @@ export class ProjectDiscovery {
     projectPath: string
   ): Promise<DirectoryNode | null> {
     try {
-      return await this.scanDirectory(projectPath, 0);
+      const response: { success: boolean; data?: any; error?: string } =
+        await invoke("cmd_scan_directory", {
+          path: projectPath,
+          maxDepth: 3,
+        });
+
+      if (!response.success || !response.data) {
+        return null;
+      }
+
+      return this.convertFileNodeToDirectoryNode(response.data);
     } catch (error) {
       console.warn(
         `Failed to scan filesystem at ${projectPath}:`,
@@ -295,55 +245,17 @@ export class ProjectDiscovery {
     }
   }
 
-  private static async scanDirectory(
-    path: string,
-    depth: number
-  ): Promise<DirectoryNode> {
-    const parts = path.split("/");
-    const name = parts[parts.length - 1] || path;
-
-    const node: DirectoryNode = {
-      path,
-      name,
-      isDirectory: true,
-      children: [],
+  private static convertFileNodeToDirectoryNode(fileNode: any): DirectoryNode {
+    return {
+      path: fileNode.path,
+      name: fileNode.name,
+      isDirectory: fileNode.is_dir,
+      children: fileNode.children
+        ? fileNode.children.map((child: any) =>
+            this.convertFileNodeToDirectoryNode(child)
+          )
+        : [],
     };
-
-    // Only scan subdirectories up to depth 2 to avoid huge trees
-    if (depth >= 2) {
-      return node;
-    }
-
-    try {
-      // Try to read directory using Node.js file system
-      // This is a simplified implementation
-      // In production, use proper file system iteration
-      const children = await this.listDirectoryContents(path);
-
-      for (const child of children) {
-        if (this.shouldIgnorePath(child)) {
-          continue;
-        }
-
-        const childPath = `${path}/${child}`;
-        const isDir = await this.isDirectory(childPath);
-
-        if (isDir) {
-          const childNode = await this.scanDirectory(childPath, depth + 1);
-          node.children!.push(childNode);
-        } else {
-          node.children!.push({
-            path: childPath,
-            name: child,
-            isDirectory: false,
-          });
-        }
-      }
-    } catch (error) {
-      console.warn(`Failed to scan directory ${path}:`, error);
-    }
-
-    return node;
   }
 
   // ─── Directory Tree Indexing ──────────────────────────────────
@@ -396,50 +308,4 @@ export class ProjectDiscovery {
     }
   }
 
-  // ─── File System Helpers ──────────────────────────────────────
-
-  private static async fileExists(path: string): Promise<boolean> {
-    try {
-      // Placeholder: In production, use proper fs operations
-      // For now, simulate file existence for .git directories
-      if (path.includes("/.git")) {
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }
-
-  private static async isDirectory(path: string): Promise<boolean> {
-    // Placeholder implementation
-    return !path.includes(".");
-  }
-
-  private static async listDirectoryContents(path: string): Promise<string[]> {
-    // Placeholder: In production, use fs.readdirSync or async variant
-    return [];
-  }
-
-  private static async readFileContent(path: string): Promise<string> {
-    // Placeholder: In production, use fs.readFileSync or async variant
-    return "";
-  }
-
-  private static shouldIgnorePath(name: string): boolean {
-    const ignore = [
-      "node_modules",
-      ".git",
-      "target",
-      "dist",
-      "build",
-      ".next",
-      "__pycache__",
-      ".vscode",
-      ".idea",
-      ".",
-      "..",
-    ];
-    return ignore.includes(name);
-  }
 }
