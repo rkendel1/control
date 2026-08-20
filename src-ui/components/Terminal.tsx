@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/tauri";
 import { Workspace, TerminalSession } from "../types";
 import "./Terminal.css";
 
@@ -26,6 +27,7 @@ export default function Terminal({ workspace }: TerminalProps) {
   );
   const [activeTerminalId, setActiveTerminalId] = useState("shell");
   const [input, setInput] = useState("");
+  const [isExecuting, setIsExecuting] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,47 +38,74 @@ export default function Terminal({ workspace }: TerminalProps) {
 
   const activeTerminal = terminals.get(activeTerminalId);
 
-  const handleCommand = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleCommand = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (input.trim()) {
+      if (input.trim() && activeTerminal && !isExecuting) {
+        setIsExecuting(true);
         const newTerminals = new Map(terminals);
         const terminal = newTerminals.get(activeTerminalId);
+
         if (terminal) {
           terminal.history.push(`$ ${input}`);
-          // Simulate command execution
-          if (input.startsWith("cargo test")) {
-            terminal.history.push("running tests...");
-            terminal.history.push("✓ All tests passed");
-          } else if (input === "git status") {
-            terminal.history.push("On branch main");
-            terminal.history.push("nothing to commit");
-          } else {
-            terminal.history.push(`Output for: ${input}`);
-          }
-          terminal.history.push("$ ");
-          newTerminals.set(activeTerminalId, terminal);
           setTerminals(newTerminals);
+
+          try {
+            const response = await invoke<any>("cmd_terminal_execute", {
+              session_id: activeTerminalId,
+              command: input,
+              cwd: terminal.cwd,
+            });
+
+            if (response.success && response.data) {
+              const output = response.data;
+              const lines = output.split("\n").filter((line: string) => line.length > 0);
+              terminal.history.push(...lines);
+            } else if (response.error) {
+              terminal.history.push(`Error: ${response.error}`);
+            }
+          } catch (error) {
+            terminal.history.push(`Command execution failed: ${error}`);
+          } finally {
+            terminal.history.push("$ ");
+            newTerminals.set(activeTerminalId, terminal);
+            setTerminals(newTerminals);
+            setInput("");
+            setIsExecuting(false);
+          }
         }
-        setInput("");
       }
     }
   };
 
-  const createTerminal = (type: "shell" | "test" | "agent") => {
-    const id = `${type}-${Date.now()}`;
-    const newTerminal: TerminalSession = {
-      id,
-      name: type === "shell" ? "zsh" : type === "test" ? "tests" : "agent",
-      type,
-      cwd: workspace?.path || "~",
-      isActive: false,
-      history: ["$ "],
-    };
-    const newTerminals = new Map(terminals);
-    newTerminals.set(id, newTerminal);
-    setTerminals(newTerminals);
-    setActiveTerminalId(id);
+  const createTerminal = async (type: "shell" | "test" | "agent") => {
+    const name = type === "shell" ? "zsh" : type === "test" ? "tests" : "agent";
+    const cwd = workspace?.path || "~";
+
+    try {
+      const response = await invoke<any>("cmd_terminal_create_session", {
+        name,
+        cwd,
+      });
+
+      if (response.success) {
+        const id = response.data;
+        const newTerminal: TerminalSession = {
+          id,
+          name,
+          type,
+          cwd,
+          isActive: true,
+          history: ["$ "],
+        };
+        const newTerminals = new Map(terminals);
+        newTerminals.set(id, newTerminal);
+        setTerminals(newTerminals);
+        setActiveTerminalId(id);
+      }
+    } catch (error) {
+      console.error("Failed to create terminal:", error);
+    }
   };
 
   if (!activeTerminal) {
@@ -101,7 +130,7 @@ export default function Terminal({ workspace }: TerminalProps) {
         ))}
         <button
           className="terminal-new-button"
-          onClick={() => createTerminal("shell")}
+          onClick={() => void createTerminal("shell")}
           title="New terminal"
         >
           +
@@ -124,6 +153,7 @@ export default function Terminal({ workspace }: TerminalProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleCommand}
+          disabled={isExecuting}
           autoFocus
           placeholder={`Type command (cwd: ${activeTerminal.cwd})`}
         />
