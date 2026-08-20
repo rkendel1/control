@@ -26,6 +26,7 @@ walkdir = "2"
 git2 = "0.19"
 sysinfo = "0.30"
 which = "6"
+notify = "6"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-store = "2"
 nix = { version = "0.27", features = ["process"] }

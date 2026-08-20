@@ -443,3 +443,52 @@ pub async fn cmd_terminal_execute(
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
 }
+
+// ─── File Watching Commands ────────────────────────────────
+
+#[tauri::command]
+pub async fn cmd_watch_directory(
+    workspace_path: String,
+) -> Result<CommandResponse<String>, String> {
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    match crate::watcher::FileWatcher::new(tx) {
+        Ok(watcher) => {
+            match watcher.watch_directory(&workspace_path) {
+                Ok(_) => Ok(CommandResponse::ok(format!("Watching: {}", workspace_path))),
+                Err(e) => Ok(CommandResponse::err(e.to_string())),
+            }
+        }
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
+
+// ─── Search Commands ───────────────────────────────────────
+
+#[tauri::command]
+pub async fn cmd_search(
+    workspace_path: String,
+    pattern: String,
+    include_patterns: Option<Vec<String>>,
+) -> Result<CommandResponse<Vec<SearchResultDTO>>, String> {
+    match crate::search::SearchEngine::search(&workspace_path, &pattern, include_patterns).await {
+        Ok(results) => {
+            let dtos: Vec<SearchResultDTO> = results
+                .into_iter()
+                .map(|r| SearchResultDTO {
+                    file_path: r.file_path,
+                    line_number: r.line_number,
+                    line: r.line,
+                })
+                .collect();
+            Ok(CommandResponse::ok(dtos))
+        }
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchResultDTO {
+    pub file_path: String,
+    pub line_number: usize,
+    pub line: String,
+}

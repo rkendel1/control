@@ -79,6 +79,8 @@ fn main() {
             commands::cmd_file_read,
             commands::cmd_terminal_create_session,
             commands::cmd_terminal_execute,
+            commands::cmd_watch_directory,
+            commands::cmd_search,
             cmd_daemon_status,
             cmd_open_project_folder,
         ])

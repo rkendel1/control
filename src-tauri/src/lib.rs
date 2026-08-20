@@ -7,8 +7,10 @@ pub mod git;
 pub mod memory;
 pub mod project;
 pub mod runtime;
+pub mod search;
 pub mod task;
 pub mod terminal;
+pub mod watcher;
 pub mod workspace;
 
 pub use error::{ControlError, Result};
