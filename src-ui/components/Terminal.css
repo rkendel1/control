@@ -1,0 +1,111 @@
+.terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1e1e1e;
+  font-family: "Fira Code", "Cascadia Code", monospace;
+  color: #e0e0e0;
+  overflow: hidden;
+}
+
+.terminal-tabs {
+  display: flex;
+  height: 32px;
+  background: #252526;
+  border-bottom: 1px solid #3e3e42;
+  gap: 8px;
+  padding: 0 4px;
+  align-items: center;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.terminal-tab {
+  background: #3c3c3c;
+  border: 1px solid #3e3e42;
+  color: #858585;
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  transition: all 0.1s;
+  white-space: nowrap;
+}
+
+.terminal-tab:hover {
+  background: #464646;
+  color: #e0e0e0;
+}
+
+.terminal-tab.active {
+  background: #1e1e1e;
+  border-color: #007acc;
+  color: #007acc;
+}
+
+.terminal-new-button {
+  background: none;
+  border: none;
+  color: #858585;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 8px;
+  transition: all 0.1s;
+}
+
+.terminal-new-button:hover {
+  color: #e0e0e0;
+}
+
+.terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.terminal-line {
+  margin: 0;
+  color: #e0e0e0;
+}
+
+.terminal-input-line {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-top: 1px solid #3e3e42;
+  background: #252526;
+  flex-shrink: 0;
+  height: 28px;
+  gap: 6px;
+}
+
+.terminal-prompt {
+  color: #858585;
+  font-weight: 600;
+  user-select: none;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #e0e0e0;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.terminal-input::placeholder {
+  color: #656565;
+}
+
+.terminal-container.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #858585;
+}

@@ -72,6 +72,10 @@ fn main() {
             commands::cmd_task_start,
             commands::cmd_runtimes_list,
             commands::cmd_workspaces_list,
+            commands::cmd_git_status,
+            commands::cmd_explorer_tree,
+            commands::cmd_file_save,
+            commands::cmd_file_read,
             cmd_daemon_status,
             cmd_open_project_folder,
         ])

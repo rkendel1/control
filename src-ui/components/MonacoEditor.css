@@ -1,0 +1,55 @@
+.monaco-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: #1e1e1e;
+  border: none;
+}
+
+.editor-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 12px;
+  background: #252526;
+  border-bottom: 1px solid #3e3e42;
+  font-size: 12px;
+  color: #858585;
+  flex-shrink: 0;
+}
+
+.file-path {
+  font-weight: 500;
+}
+
+.language {
+  color: #4fc1ff;
+  font-weight: 600;
+}
+
+.editor-textarea {
+  flex: 1;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: none;
+  padding: 12px;
+  font-family: "Fira Code", "Cascadia Code", "SF Mono", Monaco, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  tab-size: 2;
+  -moz-tab-size: 2;
+  caret-color: #007acc;
+}
+
+.editor-textarea::selection {
+  background: rgba(7, 122, 204, 0.3);
+}
+
+/* Syntax highlighting classes for textarea */
+.editor-textarea:focus {
+  outline: none;
+}

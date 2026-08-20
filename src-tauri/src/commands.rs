@@ -273,3 +273,100 @@ impl WorkspaceDTO {
         }
     }
 }
+
+// ─── Workbench Commands ──────────────────────────────────────────
+
+#[tauri::command]
+pub async fn cmd_git_status(
+    workspace_path: String,
+) -> Result<CommandResponse<GitStatusDTO>, String> {
+    // Mock implementation - will integrate with git manager
+    Ok(CommandResponse::ok(GitStatusDTO {
+        branch: "main".to_string(),
+        ahead: 0,
+        behind: 0,
+        is_clean: true,
+        files: vec![],
+        staged: vec![],
+    }))
+}
+
+#[tauri::command]
+pub async fn cmd_explorer_tree(
+    workspace_path: String,
+) -> Result<CommandResponse<Vec<ExplorerNodeDTO>>, String> {
+    // Mock implementation - will scan filesystem
+    let mock_tree = vec![
+        ExplorerNodeDTO {
+            id: "src".to_string(),
+            path: "src".to_string(),
+            name: "src".to_string(),
+            node_type: "folder".to_string(),
+            children: Some(vec![
+                ExplorerNodeDTO {
+                    id: "src-main".to_string(),
+                    path: "src/main.rs".to_string(),
+                    name: "main.rs".to_string(),
+                    node_type: "file".to_string(),
+                    children: None,
+                },
+            ]),
+        },
+        ExplorerNodeDTO {
+            id: "Cargo.toml".to_string(),
+            path: "Cargo.toml".to_string(),
+            name: "Cargo.toml".to_string(),
+            node_type: "file".to_string(),
+            children: None,
+        },
+    ];
+    Ok(CommandResponse::ok(mock_tree))
+}
+
+#[tauri::command]
+pub async fn cmd_file_save(
+    workspace_path: String,
+    file_path: String,
+    content: String,
+) -> Result<CommandResponse<bool>, String> {
+    // Will implement actual file save
+    Ok(CommandResponse::ok(true))
+}
+
+#[tauri::command]
+pub async fn cmd_file_read(
+    workspace_path: String,
+    file_path: String,
+) -> Result<CommandResponse<String>, String> {
+    // Will implement actual file read
+    Ok(CommandResponse::ok("".to_string()))
+}
+
+// ─── DTOs for Workbench ──────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitStatusDTO {
+    pub branch: String,
+    pub ahead: u32,
+    pub behind: u32,
+    pub is_clean: bool,
+    pub files: Vec<GitFileStatusDTO>,
+    pub staged: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitFileStatusDTO {
+    pub path: String,
+    pub status: String,
+    pub staged_status: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExplorerNodeDTO {
+    pub id: String,
+    pub path: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub node_type: String,
+    pub children: Option<Vec<ExplorerNodeDTO>>,
+}
