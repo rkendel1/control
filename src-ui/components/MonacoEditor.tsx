@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, forwardRef } from "react";
+import React, { useRef, forwardRef, useCallback } from "react";
+import Editor, { useMonaco } from "@monaco-editor/react";
 import { Workspace } from "../types";
 import "./MonacoEditor.css";
 
@@ -12,22 +13,10 @@ interface MonacoEditorProps {
   onSave: () => void;
 }
 
-// Mock Monaco Editor - in production, use @monaco-editor/react
 const MonacoEditor = forwardRef<HTMLDivElement, MonacoEditorProps>(
   ({ path, workspace, content, onChange, onSave }, ref) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-    useEffect(() => {
-      // In production, initialize Monaco Editor here
-      if (textareaRef.current && content) {
-        textareaRef.current.value = content;
-      }
-    }, [path, content]);
-
-    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      onChange(e.target.value);
-    };
+    const monaco = useMonaco();
+    const editorRef = useRef<any>(null);
 
     const getLanguageFromPath = (p: string): string => {
       const ext = p.split(".").pop()?.toLowerCase();
@@ -53,25 +42,52 @@ const MonacoEditor = forwardRef<HTMLDivElement, MonacoEditorProps>(
       return langMap[ext || ""] || "plaintext";
     };
 
+    const handleEditorDidMount = (editor: any) => {
+      editorRef.current = editor;
+      editor.addCommand(
+        monaco?.KeyMod.CtrlCmd | monaco?.KeyCode.KeyS,
+        onSave
+      );
+    };
+
+    const handleChange = useCallback(
+      (value: string | undefined) => {
+        if (value !== undefined) {
+          onChange(value);
+        }
+      },
+      [onChange]
+    );
+
     return (
-      <div className="monaco-editor" ref={containerRef}>
-        <div className="editor-info">
+      <div className="monaco-editor" ref={ref}>
+        <div className="editor-header">
           <span className="file-path">{path}</span>
-          <span className="language">{getLanguageFromPath(path)}</span>
+          <span className="language-badge">{getLanguageFromPath(path)}</span>
         </div>
-        <textarea
-          ref={textareaRef}
-          className="editor-textarea"
-          value={content}
-          onChange={handleChange}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-              e.preventDefault();
-              onSave();
-            }
-          }}
-          spellCheck="false"
-        />
+        <div className="editor-container">
+          <Editor
+            height="100%"
+            language={getLanguageFromPath(path)}
+            value={content}
+            onChange={handleChange}
+            onMount={handleEditorDidMount}
+            theme="vs-dark"
+            options={{
+              minimap: { enabled: true },
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+              fontSize: 13,
+              fontFamily: "'Fira Code', 'Monaco', monospace",
+              tabSize: 2,
+              insertSpaces: true,
+              lineNumbers: "on",
+              bracketPairColorization: {
+                enabled: true,
+              },
+            }}
+          />
+        </div>
       </div>
     );
   }

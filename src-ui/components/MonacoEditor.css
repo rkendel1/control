@@ -5,51 +5,82 @@
   overflow: hidden;
   background: #1e1e1e;
   border: none;
+  height: 100%;
 }
 
-.editor-info {
+.editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 12px;
+  padding: 6px 12px;
   background: #252526;
   border-bottom: 1px solid #3e3e42;
   font-size: 12px;
   color: #858585;
   flex-shrink: 0;
+  min-height: 32px;
 }
 
 .file-path {
   font-weight: 500;
-}
-
-.language {
-  color: #4fc1ff;
-  font-weight: 600;
-}
-
-.editor-textarea {
+  color: #d4d4d4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
   flex: 1;
-  background: #1e1e1e;
-  color: #e0e0e0;
-  border: none;
-  padding: 12px;
-  font-family: "Fira Code", "Cascadia Code", "SF Mono", Monaco, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  outline: none;
-  resize: none;
-  overflow: auto;
-  tab-size: 2;
-  -moz-tab-size: 2;
-  caret-color: #007acc;
 }
 
-.editor-textarea::selection {
+.language-badge {
+  color: #4ec9b0;
+  background: #1e1e1e;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.editor-container {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Monaco Editor overrides */
+.monaco-editor .monaco-editor-background {
+  background: #1e1e1e;
+}
+
+.monaco-editor .lines-content {
+  padding: 0;
+}
+
+.monaco-scrollable-element > .scrollbar > .slider {
+  background: #464647;
+  border-radius: 4px;
+}
+
+.monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: #5a5a5a;
+}
+
+.monaco-editor .line-numbers {
+  color: #858585;
+  background: #1e1e1e;
+}
+
+.monaco-editor .line-numbers.active {
+  color: #d4d4d4;
+}
+
+/* Selection color */
+.monaco-editor .selection {
   background: rgba(7, 122, 204, 0.3);
 }
 
-/* Syntax highlighting classes for textarea */
-.editor-textarea:focus {
-  outline: none;
+/* Cursor */
+.monaco-editor .cursor {
+  border-left: 1px solid #d4d4d4;
 }
