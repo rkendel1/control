@@ -4,6 +4,7 @@ pub mod agent;
 pub mod error;
 pub mod file;
 pub mod git;
+pub mod graph;
 pub mod memory;
 pub mod project;
 pub mod runtime;

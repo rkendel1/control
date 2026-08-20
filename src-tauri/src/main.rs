@@ -81,6 +81,9 @@ fn main() {
             commands::cmd_terminal_execute,
             commands::cmd_watch_directory,
             commands::cmd_search,
+            commands::cmd_detect_repository,
+            commands::cmd_scan_directory,
+            commands::cmd_index_project,
             cmd_daemon_status,
             cmd_open_project_folder,
         ])

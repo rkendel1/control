@@ -492,3 +492,38 @@ pub struct SearchResultDTO {
     pub line_number: usize,
     pub line: String,
 }
+
+// ─── Graph Commands ────────────────────────────────────────
+
+#[tauri::command]
+pub fn cmd_detect_repository(
+    project_path: String,
+) -> Result<CommandResponse<crate::graph::RepositoryInfo>, String> {
+    match crate::graph::detect_git_repository(&project_path) {
+        Ok(info) => Ok(CommandResponse::ok(info)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub fn cmd_scan_directory(
+    path: String,
+    max_depth: usize,
+) -> Result<CommandResponse<crate::graph::FileNode>, String> {
+    match crate::graph::scan_directory_tree(&path, max_depth) {
+        Ok(tree) => Ok(CommandResponse::ok(tree)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub fn cmd_index_project(
+    project_id: String,
+    project_name: String,
+    project_path: String,
+) -> Result<CommandResponse<crate::graph::ProjectIndexResult>, String> {
+    match crate::graph::index_project(&project_id, &project_name, &project_path) {
+        Ok(result) => Ok(CommandResponse::ok(result)),
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}
