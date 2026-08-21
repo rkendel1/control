@@ -10,10 +10,8 @@ test("canonical schema includes Work, Intelligence, Skills, Capabilities, Claims
   assert.match(source,/schemaVersion: 16/);
   assert.match(source,/"queued" \| "starting" \| "running"/);
   assert.match(source,/heartbeatAt/);
-  assert.match(source,/multiplexFeltChanges\(this\.db\)/);
-  assert.match(source,/const listeners=new Set/);
-  assert.match(source,/storage==="indexeddb"/);
-  assert.match(source,/runtime\.subscribe_changes=\(\)=>\(\)=>\{\}/);
+  assert.doesNotMatch(source,/multiplexFeltChanges/);
+  assert.doesNotMatch(source,/subscribe_changes=/);
 });
 
 test("ordinary task and conversation flows use automatic Control Intelligence",async()=>{

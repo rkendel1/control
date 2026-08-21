@@ -1,6 +1,6 @@
 # Daily-driver completion audit
 
-FeltDB browser-runtime finding: [subscription scalability in 0.4.7 and 0.4.14](./FELTDB-BROWSER-SUBSCRIPTION-SCALABILITY.md), including Control's mitigation and proposed upstream validation.
+FeltDB browser-runtime finding: [subscription scalability resolved upstream in 0.4.15](./FELTDB-BROWSER-SUBSCRIPTION-SCALABILITY.md). Control now uses the core runtime directly without its former subscription override.
 
 This is a requirements ledger, not a completion claim. A row is complete only when
 the current implementation and the cited verification both cover the user-visible

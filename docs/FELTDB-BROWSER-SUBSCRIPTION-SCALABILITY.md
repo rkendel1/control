@@ -1,8 +1,14 @@
 # FeltDB Browser Subscription Scalability Finding
 
-Status: confirmed implementation shortcoming; transaction-starvation mechanism requires an isolated upstream benchmark  
+Status: resolved upstream in `@feltdb/core` 0.4.15  
 Observed in: `@feltdb/core` 0.4.7 and 0.4.14  
 Runtime: Tauri WebView using FeltDB's IndexedDB browser adapter
+
+## Resolution
+
+FeltDB 0.4.15 moved IndexedDB change observation into one runtime-owned poller. Notifications are collection-filtered and multiplexed; local graph, BroadcastChannel, and durable-poll duplicates are coalesced; old change history is checkpointed rather than replayed; and polling stops after the final unsubscribe.
+
+Control upgraded to 0.4.15 and removed its `subscribe_changes` override and application-level multiplexer. This restores core-owned cross-context notifications while retaining bounded subscription work.
 
 ## Summary
 
@@ -50,7 +56,7 @@ Strong diagnosis requiring an isolated browser stress test:
 
 An upstream benchmark should measure write latency as collection subscriptions increase. This would distinguish transaction starvation from a WebKit-specific scheduling defect or another adapter interaction.
 
-## Control mitigation
+## Historical Control mitigation
 
 Control configures subscriptions immediately after constructing `StateFirstDB` and before creating collections. In its single-WebView local mode, it disables the IndexedDB durable-log polling path because FeltDB's in-process reactive graph already publishes every local mutation after commit. For remote mode it installs a subscription multiplexer that:
 
@@ -64,7 +70,7 @@ FeltDB remains the only durable application-state store. The mitigation does not
 
 This trades away cross-WebView IndexedDB notifications. Control currently owns one WebView, so no supported local workflow depends on that path. A future multi-window desktop implementation should use a BroadcastChannel-only notification path or an upstream checkpointed feed rather than restoring full-log polling.
 
-Implementation: `src-ui/lib/control-db.ts`, `multiplexFeltChanges()`.
+This mitigation was removed after upgrading to FeltDB 0.4.15; `control-db.ts` now uses the runtime unchanged.
 
 ## Recommended upstream change
 
@@ -100,4 +106,4 @@ Acceptance target: mutation latency remains bounded and does not scale linearly 
 
 FeltDB remains promising for agent work: durable identities, reactive collections, and topology-neutral local/server operation align with Control's graph. This finding exposes a browser-runtime scaling gap that an agent-heavy application is well positioned to reveal.
 
-The proof standard is not merely that FeltDB stores agent records. It must commit a connected agent work graph while many agents and UI surfaces observe it concurrently. Control should retain the multiplexer and write-latency recovery instrumentation until an upstream release contains and verifies an equivalent runtime-level fix.
+The proof standard is not merely that FeltDB stores agent records. It must commit a connected agent work graph while many agents and UI surfaces observe it concurrently. FeltDB 0.4.15 contains the equivalent runtime-level fix, so Control no longer carries a database-internals override. Task/chat timeout and recovery instrumentation remains as a general operational safeguard.
