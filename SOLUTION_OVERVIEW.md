@@ -9,54 +9,64 @@ Control is a complete, production-ready system that brings intelligent AI agents
 - 📊 **Knowledge Graphs** - Persistent FeltDB-backed project and coordination graphs
 - 🔗 **Cross-Project Coordination** - Global graph tracks all projects and agents
 - 📝 **Context Engine** - Automatically injects project context into agent prompts
-- 🚀 **Ready to Ship** - All components implemented, tested, and integrated
+- 💬 **Unified AI Conversation Layer** - Seamlessly switch between Claude, GPT-4, Ollama, with intelligent context injection
+- 🎯 **Multi-AI Intelligence** - Compare responses across targets, analyze agreement, make informed decisions
+- 🚀 **Ready to Ship** - All components implemented, tested, and integrated (Phase 6 Complete)
 
 ## Problem Solved
 
 Development teams waste time:
 - Explaining project structure to AI agents repeatedly
 - Context-switching between tools and agents
+- Switching between different AI providers (Claude, GPT-4, local models)
+- Re-explaining project context to different AI models
 - Coordinating work across multiple projects
 - Manually managing agent capabilities and assignments
 
 Control solves this by:
 1. **Automatically discovering** project structure and metadata
 2. **Generating intelligent context** from project graphs
-3. **Injecting context** into agent prompts automatically
-4. **Coordinating work** across agents and projects
-5. **Persisting everything** for continuity and learning
+3. **Injecting context** into agent prompts automatically (5 context modes)
+4. **Providing unified conversation interface** for all AI providers
+5. **Enabling seamless target switching** without losing conversation state
+6. **Comparing AI responses** for better decision-making
+7. **Coordinating work** across agents and projects
+8. **Persisting everything** for continuity and learning
 
 ## What You Get
 
 ### Complete Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Control Workbench                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  [Project Manager UI]      [Tauri Desktop App]             │
-│         ↓                         ↓                         │
-│  [Add Project]          [Filesystem Discovery]             │
-│         ↓                         ↓                         │
-│  [Select Folder] ─────→ [Git Detection + Scanning]         │
-│         ↓                         ↓                         │
-│  [Real-time Progress]    [FeltDB Persistence Layer]        │
-│         ↓                         ↓                         │
-│  [Graph Visualization]   [Project Graph (Deep)]            │
-│                                  ↓                         │
-│                         [Global Graph (Shallow)]            │
-│                                  ↓                         │
-│                         [Context Engine]                    │
-│                                  ↓                         │
-│                    [Daemon Integration API]                │
-│                                  ↓                         │
-│              [Mission-Control Daemon + Agents]             │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                      Control Workbench v6.0                          │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  [Project Manager]          [Unified Chat UI]  [Tauri App]          │
+│       ↓                           ↓                  ↓               │
+│  [Add Project]         [AI Target Selector]  [Filesystem Discovery] │
+│       ↓                           ↓                  ↓               │
+│  [Select Folder] ─→ [Context Mode Selector] [Git Detection]         │
+│       ↓                           ↓                  ↓               │
+│  [Real-time         [Message Input + Send] [Directory Scanning]     │
+│   Progress]                       ↓                  ↓               │
+│       ↓           [5 Context Modes: Current│Project] [FeltDB Layer] │
+│  [Graph Viz]        │Global│Task│Full]               ↓              │
+│       ↓                           ↓                  ↓               │
+│  [Project Details]  [Multi-AI Comparison]  [Project Graph (Deep)]   │
+│                     [Agreement Analysis]            ↓               │
+│                           ↓              [Global Graph (Shallow)]    │
+│                     [Target Registry]             ↓                 │
+│                  [Claude][GPT-4][Ollama]  [Context Engine]         │
+│                  [Control][Auto]                    ↓               │
+│                           ↓            [Daemon Integration API]     │
+│                    [Conversation Store]             ↓               │
+│                    [Persistence]    [Mission-Control + Agents]      │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Five Core Layers
+### Six Core Layers
 
 **Layer 1: Filesystem Discovery (Rust)**
 - Real filesystem access via Tauri
@@ -76,15 +86,27 @@ Control solves this by:
 - Relationship management
 - CRUD operations on entities
 
-**Layer 4: Coordination (Global Graph)**
+**Layer 4: AI Conversation Layer (TypeScript)** ⭐ NEW
+- Unified chat interface for all AI providers
+- Target abstraction (Claude, GPT-4, Ollama, Control, Auto)
+- Conversation persistence in FeltDB
+- Context resolution (5 modes)
+- Multi-AI deliberation and agreement analysis
+- Entity reference parsing and resolution
+- Artifact extraction from conversations
+- Conversation history with filtering/sorting
+
+**Layer 5: Coordination (Global Graph)**
 - Cross-project awareness
 - Agent registration and tracking
 - Shared task management
 - Decision coordination
+- Global search across all data types
 
-**Layer 5: Context Intelligence (Context Engine)**
+**Layer 6: Context Intelligence (Context Engine)**
 - Derives meaningful context from graphs
 - Generates markdown for agents
+- Injects context into conversations automatically
 - Caches for performance
 - Syncs with mission-control daemon
 
@@ -166,6 +188,22 @@ Agent with Context:
 - [x] Query with filtering and pagination
 - [x] Project graph lifecycle management
 
+### ✅ AI Conversation Layer (Phase 6) ⭐ NEW
+- [x] Unified chat interface with target switching
+- [x] 5 AI targets: Claude, GPT-4, Ollama, Control, Auto
+- [x] Conversation persistence in FeltDB
+- [x] 5-mode context injection (Current/Project/Global/Task/Full)
+- [x] Multi-AI deliberation and agreement analysis
+- [x] Entity reference parsing ([file:], [symbol:], [task:], etc.)
+- [x] Artifact extraction (Tasks, Decisions, Requirements)
+- [x] Conversation history with filtering, sorting, grouping
+- [x] Global search across conversations, files, tasks, commits
+- [x] User preferences (per-project target, context mode, UI settings)
+- [x] localStorage-based preference persistence
+- [x] Target availability detection and status
+- [x] React 18 UI component with dark mode support
+- [x] Comprehensive integration tests
+
 ### ✅ Global Coordination
 - [x] Cross-project project registry
 - [x] Active agent tracking
@@ -189,6 +227,7 @@ Agent with Context:
 
 ### ✅ User Interface
 - [x] Project manager component
+- [x] Unified chat component with AI targets
 - [x] Real-time discovery progress
 - [x] Project statistics display
 - [x] Selected project details
@@ -199,6 +238,9 @@ Agent with Context:
 - [x] End-to-end verification script
 - [x] Persistence verification
 - [x] Full 12-step demo workflow
+- [x] Conversation layer e2e tests (Phase 6)
+- [x] Target capability tests
+- [x] Advanced feature tests
 
 ## Technology Stack
 

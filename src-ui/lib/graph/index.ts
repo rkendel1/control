@@ -2,11 +2,17 @@
  * Control Graph Module
  *
  * Provides the GraphRepository abstraction and FeltDB implementation.
- * This is the foundation for project graphs and global graph.
+ * This is the foundation for project graphs, global graph, and conversations.
  */
 
 export * from "@/types/graph";
 export { FeltDBGraphRepository } from "./FeltDBGraphRepository";
+export { ConversationStore } from "./conversation-store";
+export {
+  ContextResolver,
+  createContextResolver,
+  getContextResolver,
+} from "./context-resolver";
 
 import { createFeltDB } from "@feltdb/core";
 import { FeltDBGraphRepository } from "./FeltDBGraphRepository";
