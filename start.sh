@@ -5,6 +5,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,19 +35,18 @@ echo "║  • AI Targets (Claude, GPT-4, Ollama, Auto)                ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo -e "${NC}\n"
 
-# Check if running from project root
-if [ ! -f "package.json" ]; then
-  echo -e "${RED}Error: Run this script from the Control project root${NC}"
+# Validate expected project structure
+if [ ! -f "mission-control/package.json" ] || [ ! -f "src-ui/package.json" ] || [ ! -f "src-tauri/Cargo.toml" ]; then
+  echo -e "${RED}Error: Missing expected Control project files${NC}"
+  echo "Expected: mission-control/package.json, src-ui/package.json, src-tauri/Cargo.toml"
   exit 1
 fi
 
 # Function to cleanup on exit
 cleanup() {
   echo -e "\n${YELLOW}Shutting down services...${NC}"
-  # Kill daemon if started by us
-  if [ ! -z "$DAEMON_PID" ]; then
-    kill $DAEMON_PID 2>/dev/null || true
-  fi
+  # Daemon is managed by mission-control daemon scripts.
+  # We do not force-stop it here to avoid killing unrelated processes.
   exit 0
 }
 
@@ -82,34 +84,31 @@ echo -e "  ${YELLOW}ℹ Ollama: Will run locally (http://localhost:11434)${NC}"
 
 # Install dependencies if needed
 echo -e "\n${BLUE}[2/4]${NC} Checking dependencies..."
-if [ ! -d "node_modules" ]; then
-  echo "  Installing root dependencies..."
-  pnpm install
-fi
-
 if [ ! -d "mission-control/node_modules" ]; then
   echo "  Installing mission-control dependencies..."
-  cd mission-control
-  pnpm install
-  cd ..
+  (cd mission-control && pnpm install)
+fi
+
+if [ ! -d "src-ui/node_modules" ]; then
+  echo "  Installing src-ui dependencies..."
+  (cd src-ui && pnpm install)
 fi
 
 echo -e "  ${GREEN}✓ Dependencies ready${NC}"
 
 # Start Mission-Control Daemon (background)
 echo -e "\n${BLUE}[3/4]${NC} Starting Mission-Control Daemon..."
-cd mission-control
-pnpm daemon:start > /dev/null 2>&1 &
-DAEMON_PID=$!
+# Start in background so unified startup can continue.
+(cd mission-control && pnpm daemon:start > /tmp/control-daemon-start.log 2>&1) &
+DAEMON_START_PID=$!
 sleep 2
 
-if ps -p $DAEMON_PID > /dev/null; then
-  echo -e "  ${GREEN}✓ Daemon started (PID: $DAEMON_PID)${NC}"
+if (cd mission-control && pnpm daemon:status > /tmp/control-daemon-status.log 2>&1); then
+  echo -e "  ${GREEN}✓ Daemon started${NC}"
 else
-  echo -e "  ${RED}✗ Failed to start daemon${NC}"
-  exit 1
+  echo -e "  ${YELLOW}⚠ Daemon status check failed (startup may still be in progress)${NC}"
+  echo -e "  ${YELLOW}  See /tmp/control-daemon-start.log and /tmp/control-daemon-status.log${NC}"
 fi
-cd ..
 
 # Start Tauri Application
 echo -e "\n${BLUE}[4/4]${NC} Starting Tauri Application..."
@@ -120,9 +119,23 @@ sleep 1
 
 # Start dev mode
 if [ "$IS_WINDOWS" = true ]; then
+  echo -e "  ${YELLOW}ℹ Windows detected; use start.bat for best compatibility${NC}"
+fi
+
+if [ -f "package.json" ] && npm run 2>/dev/null | grep -q " tauri"; then
   npm run tauri dev
+elif cargo tauri --help > /dev/null 2>&1; then
+  (cd src-tauri && cargo tauri dev)
 else
-  npm run tauri dev
+  echo -e "  ${RED}✗ Tauri CLI not available. Desktop mode cannot start.${NC}"
+  echo -e "  ${YELLOW}  Install it with: cargo install tauri-cli${NC}"
+  echo -e "  ${YELLOW}  Optional web fallback: CONTROL_WEB_FALLBACK=1 ./start.sh${NC}"
+  if [ "${CONTROL_WEB_FALLBACK:-0}" = "1" ]; then
+    echo -e "  ${YELLOW}ℹ Starting web fallback (no Tauri IPC)${NC}"
+    (cd src-ui && pnpm dev)
+  else
+    exit 1
+  fi
 fi
 
 # Cleanup on exit

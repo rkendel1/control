@@ -23,6 +23,7 @@ export default function Workbench() {
     closeFile,
     saveFile,
     setFileModified,
+    addProject,
   } = useWorkspace();
 
   const [sidebarWidth, setSidebarWidth] = useState(250);
@@ -31,6 +32,16 @@ export default function Workbench() {
   const [isResizing, setIsResizing] = useState<
     "sidebar" | "agent" | "terminal" | null
   >(null);
+
+  const handleAddProject = async () => {
+    const path = window.prompt("Enter absolute path to project folder:", "");
+    if (!path) return;
+
+    const added = await addProject(path);
+    if (!added) {
+      window.alert("Failed to add project. Check the path and try again.");
+    }
+  };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -108,6 +119,9 @@ export default function Workbench() {
           </select>
         </div>
         <div className="header-right">
+          <button className="header-action" onClick={() => void handleAddProject()}>
+            Open Project
+          </button>
           <span className="git-info">
             {gitStatus?.branch && `${gitStatus.branch}`}
             {gitStatus?.isClean === false && " ●"}

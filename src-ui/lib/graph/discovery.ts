@@ -9,7 +9,7 @@
  * 5. Populates project graph with initial entities
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@/lib/tauri";
 import type {
   GraphRepository,
   GraphId,

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useContext } from "react";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@/lib/tauri";
 import { WorkspaceContext } from "@/hooks/useWorkspace";
 import "./SearchPanel.css";
 
@@ -37,9 +37,9 @@ export default function SearchPanel({ onResultClick }: SearchPanelProps) {
 
       try {
         const response = await invoke<any>("cmd_search", {
-          workspace_path: workspace.currentWorkspace.path,
+          workspacePath: workspace.currentWorkspace.path,
           pattern: searchTerm,
-          include_patterns: null,
+          includePatterns: null,
         });
 
         if (response.success && response.data) {

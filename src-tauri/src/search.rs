@@ -1,5 +1,5 @@
 use crate::error::Result;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -18,40 +18,32 @@ impl SearchEngine {
         pattern: &str,
         include_patterns: Option<Vec<String>>,
     ) -> Result<Vec<SearchResult>> {
-        let workspace = workspace_path.as_ref();
         let mut results = Vec::new();
+        let mut stack = vec![workspace_path.as_ref().to_path_buf()];
 
-        Self::search_recursive(workspace, pattern, &include_patterns, &mut results).await?;
-
-        Ok(results)
-    }
-
-    async fn search_recursive(
-        path: &Path,
-        pattern: &str,
-        include_patterns: &Option<Vec<String>>,
-        results: &mut Vec<SearchResult>,
-    ) -> Result<()> {
-        if !path.is_dir() {
-            return Ok(());
-        }
-
-        let mut entries = fs::read_dir(path).await?;
-
-        while let Some(entry) = entries.next_entry().await? {
-            let entry_path = entry.path();
-            let file_type = entry.file_type().await?;
-            let file_name = entry.file_name();
-
-            // Skip hidden files and common unimportant directories
-            let name_str = file_name.to_string_lossy();
-            if name_str.starts_with('.') || Self::should_ignore(&name_str) {
+        while let Some(path) = stack.pop() {
+            if !path.is_dir() {
                 continue;
             }
 
-            if file_type.is_dir() {
-                Self::search_recursive(&entry_path, pattern, include_patterns, results).await?;
-            } else {
+            let mut entries = fs::read_dir(&path).await?;
+
+            while let Some(entry) = entries.next_entry().await? {
+                let entry_path = entry.path();
+                let file_type = entry.file_type().await?;
+                let file_name = entry.file_name();
+
+                // Skip hidden files and common unimportant directories
+                let name_str = file_name.to_string_lossy();
+                if name_str.starts_with('.') || Self::should_ignore(&name_str) {
+                    continue;
+                }
+
+                if file_type.is_dir() {
+                    stack.push(entry_path);
+                    continue;
+                }
+
                 // Check if file matches include patterns
                 if let Some(ref patterns) = include_patterns {
                     let name = file_name.to_string_lossy();
@@ -75,7 +67,7 @@ impl SearchEngine {
             }
         }
 
-        Ok(())
+        Ok(results)
     }
 
     fn should_ignore(name: &str) -> bool {

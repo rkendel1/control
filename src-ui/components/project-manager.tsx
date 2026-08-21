@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauriRuntime } from "@/lib/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Card,
@@ -77,6 +77,15 @@ export function ProjectManager() {
 
   const handleAddProject = async () => {
     try {
+      if (!isTauriRuntime()) {
+        setDiscovery({
+          status: "error",
+          progress:
+            "Tauri runtime unavailable. Launch the desktop app instead of plain Vite.",
+        });
+        return;
+      }
+
       setDiscovery({ status: "discovering", progress: "Opening folder..." });
 
       // Open file picker

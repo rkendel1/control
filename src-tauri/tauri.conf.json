@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Control",
+  "version": "0.1.0",
+  "identifier": "com.rkendel1.control",
+  "build": {
+    "beforeDevCommand": "cd src-ui && pnpm dev",
+    "beforeBuildCommand": "cd src-ui && pnpm build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "src-ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Control",
+        "width": 1400,
+        "height": 900,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

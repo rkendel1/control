@@ -1,5 +1,6 @@
 use crate::error::Result;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 use tokio::fs;
 
 /// File manager for workspace operations
@@ -45,7 +46,12 @@ impl FileManager {
                 is_dir: file_type.is_dir(),
                 is_file: file_type.is_file(),
                 size: metadata.len(),
-                modified: metadata.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs(),
+                modified: metadata
+                    .modified()
+                    .ok()
+                    .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
             });
         }
 
@@ -54,11 +60,10 @@ impl FileManager {
 
     /// Build explorer tree structure
     pub async fn build_tree(&self, max_depth: usize) -> Result<Vec<TreeNode>> {
-        self.build_tree_recursive(&self.workspace_root, 0, max_depth)
-            .await
+        self.build_tree_recursive_sync(&self.workspace_root, 0, max_depth)
     }
 
-    async fn build_tree_recursive(
+    fn build_tree_recursive_sync(
         &self,
         path: &Path,
         depth: usize,
@@ -69,10 +74,11 @@ impl FileManager {
         }
 
         let mut nodes = Vec::new();
-        let mut read_dir = fs::read_dir(path).await?;
+        let read_dir = std::fs::read_dir(path)?;
 
-        while let Some(entry) = read_dir.next_entry().await? {
-            let file_type = entry.file_type().await?;
+        for entry in read_dir {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
             let file_name = entry.file_name();
             let entry_path = entry.path();
 
@@ -88,8 +94,7 @@ impl FileManager {
 
             if file_type.is_dir() {
                 let children = if depth < max_depth - 1 {
-                    self.build_tree_recursive(&entry_path, depth + 1, max_depth)
-                        .await
+                    self.build_tree_recursive_sync(&entry_path, depth + 1, max_depth)
                         .unwrap_or_default()
                 } else {
                     Vec::new()

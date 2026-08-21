@@ -2,7 +2,7 @@
 // Desktop UI communicates with Control Core via these commands.
 // No HTTP calls needed for normal UI operation.
 
-use crate::ControlCore;
+use control::ControlCore;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -37,11 +37,11 @@ impl<T> CommandResponse<T> {
 #[tauri::command]
 pub async fn cmd_projects_list(
     core: State<'_, ControlCore>,
-) -> Result<CommandResponse<Vec<String>>, String> {
+) -> Result<CommandResponse<Vec<ProjectDTO>>, String> {
     match core.projects().read().await.list() {
         Ok(projects) => {
-            let ids: Vec<String> = projects.iter().map(|p| p.id.clone()).collect();
-            Ok(CommandResponse::ok(ids))
+            let dtos: Vec<ProjectDTO> = projects.iter().map(ProjectDTO::from).collect();
+            Ok(CommandResponse::ok(dtos))
         }
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
@@ -60,7 +60,7 @@ pub async fn cmd_projects_add(
         .add_from_path(&path, name)
         .await
     {
-        Ok(project) => Ok(CommandResponse::ok(ProjectDTO::from(project))),
+        Ok(project) => Ok(CommandResponse::ok(ProjectDTO::from(&project))),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
 }
@@ -71,7 +71,7 @@ pub async fn cmd_projects_get(
     id: String,
 ) -> Result<CommandResponse<ProjectDTO>, String> {
     match core.projects().read().await.get(&id) {
-        Ok(Some(project)) => Ok(CommandResponse::ok(ProjectDTO::from(project))),
+        Ok(Some(project)) => Ok(CommandResponse::ok(ProjectDTO::from(&project))),
         Ok(None) => Ok(CommandResponse::err(format!("Project not found: {}", id))),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
@@ -111,7 +111,7 @@ pub async fn cmd_task_create(
         .await
         .create(title, project_id, description)
     {
-        Ok(task) => Ok(CommandResponse::ok(TaskDTO::from(task))),
+        Ok(task) => Ok(CommandResponse::ok(TaskDTO::from(&task))),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
 }
@@ -122,7 +122,7 @@ pub async fn cmd_task_start(
     task_id: String,
 ) -> Result<CommandResponse<RunDTO>, String> {
     match core.tasks().write().await.start(&task_id).await {
-        Ok(run) => Ok(CommandResponse::ok(RunDTO::from(run))),
+        Ok(run) => Ok(CommandResponse::ok(RunDTO::from(&run))),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
 }
@@ -149,21 +149,35 @@ pub async fn cmd_workspaces_list(
     core: State<'_, ControlCore>,
     project_id: Option<String>,
 ) -> Result<CommandResponse<Vec<WorkspaceDTO>>, String> {
-    match core
+    let mut dtos: Vec<WorkspaceDTO> = match core
         .workspaces()
         .read()
         .await
         .list(project_id.as_deref())
     {
-        Ok(workspaces) => {
-            let dtos: Vec<WorkspaceDTO> = workspaces
-                .iter()
-                .map(WorkspaceDTO::from)
-                .collect();
-            Ok(CommandResponse::ok(dtos))
+        Ok(workspaces) => workspaces
+            .iter()
+            .map(WorkspaceDTO::from)
+            .collect(),
+        Err(e) => return Ok(CommandResponse::err(e.to_string())),
+    };
+
+    // Fallback: synthesize a direct workspace from project path so UI is usable.
+    if dtos.is_empty() {
+        if let Some(pid) = project_id {
+            if let Ok(Some(project)) = core.projects().read().await.get(&pid) {
+                dtos.push(WorkspaceDTO {
+                    id: format!("ws_{}", project.id),
+                    project_id: project.id,
+                    path: project.repository_path,
+                    mode: "direct".to_string(),
+                    status: "ready".to_string(),
+                });
+            }
         }
-        Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
+
+    Ok(CommandResponse::ok(dtos))
 }
 
 // ─── DTOs (Data Transfer Objects) ────────────────────────────────────
@@ -172,20 +186,19 @@ pub async fn cmd_workspaces_list(
 pub struct ProjectDTO {
     pub id: String,
     pub name: String,
+    pub path: String,
     pub description: Option<String>,
-    pub repository_path: String,
     pub runtime: Option<String>,
 }
 
 impl ProjectDTO {
-    fn from(_project: &crate::project::Project) -> Self {
-        // Will implement when project types are ready
+    fn from(project: &control::project::Project) -> Self {
         Self {
-            id: String::new(),
-            name: String::new(),
-            description: None,
-            repository_path: String::new(),
-            runtime: None,
+            id: project.id.clone(),
+            name: project.name.clone(),
+            path: project.repository_path.clone(),
+            description: project.description.clone(),
+            runtime: project.runtime.clone(),
         }
     }
 }
@@ -200,7 +213,7 @@ pub struct TaskDTO {
 }
 
 impl TaskDTO {
-    fn from(_task: &crate::task::Task) -> Self {
+    fn from(_task: &control::task::Task) -> Self {
         // Will implement when task types are ready
         Self {
             id: String::new(),
@@ -222,7 +235,7 @@ pub struct RunDTO {
 }
 
 impl RunDTO {
-    fn from(_run: &crate::task::Run) -> Self {
+    fn from(_run: &control::task::Run) -> Self {
         // Will implement when run types are ready
         Self {
             id: String::new(),
@@ -242,7 +255,7 @@ pub struct RuntimeStatusDTO {
 }
 
 impl RuntimeStatusDTO {
-    fn from(_runtime: &crate::runtime::RuntimeInfo) -> Self {
+    fn from(_runtime: &control::runtime::RuntimeInfo) -> Self {
         // Will implement when runtime types are ready
         Self {
             name: String::new(),
@@ -262,7 +275,7 @@ pub struct WorkspaceDTO {
 }
 
 impl WorkspaceDTO {
-    fn from(_workspace: &crate::workspace::Workspace) -> Self {
+    fn from(_workspace: &control::workspace::Workspace) -> Self {
         // Will implement when workspace types are ready
         Self {
             id: String::new(),
@@ -280,7 +293,7 @@ impl WorkspaceDTO {
 pub async fn cmd_git_status(
     workspace_path: String,
 ) -> Result<CommandResponse<GitStatusDTO>, String> {
-    match crate::git::GitManager::status(&workspace_path) {
+    match control::git::GitManager::status(&workspace_path) {
         Ok(status) => {
             let files = status
                 .files
@@ -309,7 +322,7 @@ pub async fn cmd_git_status(
 pub async fn cmd_explorer_tree(
     workspace_path: String,
 ) -> Result<CommandResponse<Vec<ExplorerNodeDTO>>, String> {
-    let file_manager = crate::file::FileManager::new(&workspace_path);
+    let file_manager = control::file::FileManager::new(&workspace_path);
     match file_manager.build_tree(3).await {
         Ok(tree) => {
             let dto_tree: Vec<ExplorerNodeDTO> = tree
@@ -328,7 +341,7 @@ pub async fn cmd_file_save(
     file_path: String,
     content: String,
 ) -> Result<CommandResponse<bool>, String> {
-    let file_manager = crate::file::FileManager::new(&workspace_path);
+    let file_manager = control::file::FileManager::new(&workspace_path);
     match file_manager.write(&file_path, &content).await {
         Ok(_) => Ok(CommandResponse::ok(true)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
@@ -340,7 +353,7 @@ pub async fn cmd_file_read(
     workspace_path: String,
     file_path: String,
 ) -> Result<CommandResponse<String>, String> {
-    let file_manager = crate::file::FileManager::new(&workspace_path);
+    let file_manager = control::file::FileManager::new(&workspace_path);
     match file_manager.read(&file_path).await {
         Ok(content) => Ok(CommandResponse::ok(content)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
@@ -377,7 +390,7 @@ pub struct ExplorerNodeDTO {
 }
 
 impl ExplorerNodeDTO {
-    pub fn from_tree_node(node: crate::file::TreeNode) -> Self {
+    pub fn from_tree_node(node: control::file::TreeNode) -> Self {
         let node_type = if node.is_dir { "folder" } else { "file" }.to_string();
         let children = node.children.map(|children| {
             children.into_iter().map(ExplorerNodeDTO::from_tree_node).collect()
@@ -400,7 +413,7 @@ pub async fn cmd_git_stage(
     workspace_path: String,
     file_path: String,
 ) -> Result<CommandResponse<bool>, String> {
-    match crate::git::GitManager::stage_file(&workspace_path, &file_path) {
+    match control::git::GitManager::stage_file(&workspace_path, &file_path) {
         Ok(_) => Ok(CommandResponse::ok(true)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
@@ -411,7 +424,7 @@ pub async fn cmd_git_commit(
     workspace_path: String,
     message: String,
 ) -> Result<CommandResponse<String>, String> {
-    match crate::git::GitManager::commit(&workspace_path, &message) {
+    match control::git::GitManager::commit(&workspace_path, &message) {
         Ok(commit_id) => Ok(CommandResponse::ok(commit_id)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
@@ -424,7 +437,7 @@ pub async fn cmd_terminal_create_session(
     name: String,
     cwd: String,
 ) -> Result<CommandResponse<String>, String> {
-    let manager = crate::terminal::TerminalManager::new();
+    let manager = control::terminal::TerminalManager::new();
     match manager.create_session(name, cwd).await {
         Ok(session_id) => Ok(CommandResponse::ok(session_id)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
@@ -437,7 +450,7 @@ pub async fn cmd_terminal_execute(
     command: String,
     cwd: String,
 ) -> Result<CommandResponse<String>, String> {
-    let manager = crate::terminal::TerminalManager::new();
+    let manager = control::terminal::TerminalManager::new();
     match manager.execute_command(&session_id, &command, &cwd).await {
         Ok(output) => Ok(CommandResponse::ok(output)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
@@ -451,7 +464,7 @@ pub async fn cmd_watch_directory(
     workspace_path: String,
 ) -> Result<CommandResponse<String>, String> {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    match crate::watcher::FileWatcher::new(tx) {
+    match control::watcher::FileWatcher::new(tx) {
         Ok(watcher) => {
             match watcher.watch_directory(&workspace_path) {
                 Ok(_) => Ok(CommandResponse::ok(format!("Watching: {}", workspace_path))),
@@ -470,7 +483,7 @@ pub async fn cmd_search(
     pattern: String,
     include_patterns: Option<Vec<String>>,
 ) -> Result<CommandResponse<Vec<SearchResultDTO>>, String> {
-    match crate::search::SearchEngine::search(&workspace_path, &pattern, include_patterns).await {
+    match control::search::SearchEngine::search(&workspace_path, &pattern, include_patterns).await {
         Ok(results) => {
             let dtos: Vec<SearchResultDTO> = results
                 .into_iter()
@@ -498,8 +511,8 @@ pub struct SearchResultDTO {
 #[tauri::command]
 pub fn cmd_detect_repository(
     project_path: String,
-) -> Result<CommandResponse<crate::graph::RepositoryInfo>, String> {
-    match crate::graph::detect_git_repository(&project_path) {
+) -> Result<CommandResponse<control::graph::RepositoryInfo>, String> {
+    match control::graph::detect_git_repository(&project_path) {
         Ok(info) => Ok(CommandResponse::ok(info)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
@@ -509,8 +522,8 @@ pub fn cmd_detect_repository(
 pub fn cmd_scan_directory(
     path: String,
     max_depth: usize,
-) -> Result<CommandResponse<crate::graph::FileNode>, String> {
-    match crate::graph::scan_directory_tree(&path, max_depth) {
+) -> Result<CommandResponse<control::graph::FileNode>, String> {
+    match control::graph::scan_directory_tree(&path, max_depth) {
         Ok(tree) => Ok(CommandResponse::ok(tree)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
@@ -521,8 +534,8 @@ pub fn cmd_index_project(
     project_id: String,
     project_name: String,
     project_path: String,
-) -> Result<CommandResponse<crate::graph::ProjectIndexResult>, String> {
-    match crate::graph::index_project(&project_id, &project_name, &project_path) {
+) -> Result<CommandResponse<control::graph::ProjectIndexResult>, String> {
+    match control::graph::index_project(&project_id, &project_name, &project_path) {
         Ok(result) => Ok(CommandResponse::ok(result)),
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
@@ -551,7 +564,7 @@ pub fn cmd_initialize_project(
     project_path: String,
 ) -> Result<CommandResponse<ProjectInitResult>, String> {
     // Step 1: Index the project (filesystem + git)
-    match crate::graph::index_project(&project_id, &project_name, &project_path) {
+    match control::graph::index_project(&project_id, &project_name, &project_path) {
         Ok(index_result) => {
             let graph_id = format!("graph:{}", project_id);
 

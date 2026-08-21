@@ -24,6 +24,10 @@ pub struct FileStatus {
 }
 
 impl GitManager {
+    pub fn new() -> Result<Self> {
+        Ok(Self)
+    }
+
     /// Get repository status
     pub fn status(repo_path: impl AsRef<Path>) -> Result<GitStatus> {
         let repo = Repository::open(repo_path)?;
@@ -124,7 +128,7 @@ impl GitManager {
         Ok(commit_id.to_string())
     }
 
-    fn get_ahead_behind(repo: &Repository) -> Result<(u32, u32)> {
+    fn get_ahead_behind(_repo: &Repository) -> Result<(u32, u32)> {
         Ok((0, 0))
     }
 

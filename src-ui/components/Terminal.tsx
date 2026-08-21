@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@/lib/tauri";
 import { Workspace, TerminalSession } from "../types";
 import "./Terminal.css";
 
@@ -52,7 +52,7 @@ export default function Terminal({ workspace }: TerminalProps) {
 
           try {
             const response = await invoke<any>("cmd_terminal_execute", {
-              session_id: activeTerminalId,
+              sessionId: activeTerminalId,
               command: input,
               cwd: terminal.cwd,
             });

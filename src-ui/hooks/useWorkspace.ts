@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "../lib/tauri";
 import {
   Project,
   Workspace,
@@ -46,7 +46,9 @@ export function useWorkspace() {
       if (response.success && response.data) {
         setProjects(response.data);
         if (response.data.length > 0) {
-          setCurrentProject(response.data[0]);
+          const firstProject = response.data[0];
+          setCurrentProject(firstProject);
+          await loadWorkspacesForProject(firstProject.id);
         }
       } else {
         setError(response.error || "Failed to load projects");
@@ -55,6 +57,23 @@ export function useWorkspace() {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  const loadWorkspacesForProject = useCallback(async (projectId: string) => {
+    try {
+      const workspaces = await invoke<any>("cmd_workspaces_list", {
+        projectId: projectId,
+      });
+
+      if (workspaces.success && workspaces.data?.length > 0) {
+        setCurrentWorkspace(workspaces.data[0]);
+      } else {
+        setCurrentWorkspace(null);
+      }
+    } catch (err) {
+      console.error("Failed to load workspaces:", err);
+      setCurrentWorkspace(null);
     }
   }, []);
 
@@ -68,18 +87,12 @@ export function useWorkspace() {
           currentProjectId: projectId,
           openFiles: new Map(), // Clear tabs when switching projects
         }));
-        // Load default workspace for project
-        const workspaces = await invoke<any>("cmd_workspaces_list", {
-          project_id: projectId,
-        });
-        if (workspaces.success && workspaces.data?.length > 0) {
-          setCurrentWorkspace(workspaces.data[0]);
-        }
+        await loadWorkspacesForProject(projectId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to switch project");
     }
-  }, []);
+  }, [loadWorkspacesForProject]);
 
   const openFile = useCallback((path: string) => {
     const tabId = path;
@@ -122,16 +135,27 @@ export function useWorkspace() {
     if (!currentWorkspace) return;
     try {
       const response = await invoke<any>("cmd_git_status", {
-        workspace_path: currentWorkspace.path,
+        workspacePath: currentWorkspace.path,
       });
       if (response.success) {
         const data = response.data;
+        const fileEntries: Array<[string, GitFileStatus]> = Array.isArray(data.files)
+          ? data.files.map((file: any) => [
+              file.path,
+              {
+                status: file.status,
+                stagedStatus: file.staged_status,
+                isConflicted: file.status === "C",
+              } as GitFileStatus,
+            ])
+          : [];
+
         setGitStatus({
           branch: data.branch,
           ahead: data.ahead || 0,
           behind: data.behind || 0,
           isClean: data.is_clean,
-          files: new Map(data.files || []),
+          files: new Map(fileEntries),
           stagedFiles: new Set(data.staged || []),
         });
       }
@@ -144,7 +168,7 @@ export function useWorkspace() {
     if (!currentWorkspace) return;
     try {
       const response = await invoke<any>("cmd_explorer_tree", {
-        workspace_path: currentWorkspace.path,
+        workspacePath: currentWorkspace.path,
       });
       if (response.success) {
         setExplorerTree(response.data || []);
@@ -158,8 +182,8 @@ export function useWorkspace() {
     if (!currentWorkspace) return;
     try {
       await invoke("cmd_file_save", {
-        workspace_path: currentWorkspace.path,
-        file_path: path,
+        workspacePath: currentWorkspace.path,
+        filePath: path,
         content,
       });
       setWorkspaceState((prev) => {
@@ -203,6 +227,39 @@ export function useWorkspace() {
     []
   );
 
+  const addProject = useCallback(
+    async (path: string, name?: string) => {
+      const normalized = path.trim();
+      if (!normalized) return false;
+
+      try {
+        const response = await invoke<any>("cmd_projects_add", {
+          path: normalized,
+          name: name?.trim() || null,
+        });
+
+        if (!response.success || !response.data) {
+          setError(response.error || "Failed to add project");
+          return false;
+        }
+
+        const project = response.data as Project;
+        setProjects((prev) => {
+          if (prev.some((p) => p.id === project.id)) return prev;
+          return [...prev, project];
+        });
+        setCurrentProject(project);
+        await loadWorkspacesForProject(project.id);
+        setError(null);
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to add project");
+        return false;
+      }
+    },
+    [loadWorkspacesForProject]
+  );
+
   return {
     projects,
     currentProject,
@@ -218,6 +275,7 @@ export function useWorkspace() {
     saveFile,
     setFileModified,
     setScrollPosition,
+    addProject,
     loadGitStatus,
     loadExplorerTree,
   };
