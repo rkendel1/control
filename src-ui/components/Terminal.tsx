@@ -28,7 +28,20 @@ export default function Terminal({ workspace }: TerminalProps) {
   const [activeTerminalId, setActiveTerminalId] = useState("shell");
   const [input, setInput] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const outputRef = useRef<HTMLDivElement>(null);
+
+  const commonCommands = [
+    "pwd",
+    "ls",
+    "ls -la",
+    "git status",
+    "git diff",
+    "pnpm test",
+    "pnpm build",
+    "cargo check",
+  ];
 
   useEffect(() => {
     if (outputRef.current) {
@@ -39,10 +52,52 @@ export default function Terminal({ workspace }: TerminalProps) {
   const activeTerminal = terminals.get(activeTerminalId);
 
   const handleCommand = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHistoryIndex((prev) => {
+        if (commandHistory.length === 0) return -1;
+        const next = prev < 0 ? commandHistory.length - 1 : Math.max(0, prev - 1);
+        setInput(commandHistory[next] || "");
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHistoryIndex((prev) => {
+        if (commandHistory.length === 0 || prev < 0) {
+          setInput("");
+          return -1;
+        }
+        const next = prev + 1;
+        if (next >= commandHistory.length) {
+          setInput("");
+          return -1;
+        }
+        setInput(commandHistory[next] || "");
+        return next;
+      });
+      return;
+    }
+
+    if (e.key === "Tab") {
+      const prefix = input.trim();
+      if (!prefix) return;
+      const suggestion = commonCommands.find((cmd) => cmd.startsWith(prefix));
+      if (suggestion) {
+        e.preventDefault();
+        setInput(suggestion);
+      }
+      return;
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
       if (input.trim() && activeTerminal && !isExecuting) {
         setIsExecuting(true);
+        setCommandHistory((prev) => [...prev, input]);
+        setHistoryIndex(-1);
         const newTerminals = new Map(terminals);
         const terminal = newTerminals.get(activeTerminalId);
 
@@ -155,7 +210,7 @@ export default function Terminal({ workspace }: TerminalProps) {
           onKeyDown={handleCommand}
           disabled={isExecuting}
           autoFocus
-          placeholder={`Type command (cwd: ${activeTerminal.cwd})`}
+          placeholder={`Type command (cwd: ${activeTerminal.cwd}) - Tab for suggestions`}
         />
       </div>
     </div>

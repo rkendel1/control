@@ -213,14 +213,13 @@ pub struct TaskDTO {
 }
 
 impl TaskDTO {
-    fn from(_task: &control::task::Task) -> Self {
-        // Will implement when task types are ready
+    fn from(task: &control::task::Task) -> Self {
         Self {
-            id: String::new(),
-            title: String::new(),
-            project_id: String::new(),
-            status: "pending".to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            id: task.id.clone(),
+            title: task.title.clone(),
+            project_id: task.project_id.clone(),
+            status: task.status.clone(),
+            created_at: task.created_at.clone(),
         }
     }
 }
@@ -235,14 +234,13 @@ pub struct RunDTO {
 }
 
 impl RunDTO {
-    fn from(_run: &control::task::Run) -> Self {
-        // Will implement when run types are ready
+    fn from(run: &control::task::Run) -> Self {
         Self {
-            id: String::new(),
-            task_id: String::new(),
-            status: "pending".to_string(),
-            workspace: String::new(),
-            runtime: String::new(),
+            id: run.id.clone(),
+            task_id: run.task_id.clone(),
+            status: run.status.clone(),
+            workspace: run.workspace.clone(),
+            runtime: run.runtime.clone(),
         }
     }
 }
@@ -255,12 +253,11 @@ pub struct RuntimeStatusDTO {
 }
 
 impl RuntimeStatusDTO {
-    fn from(_runtime: &control::runtime::RuntimeInfo) -> Self {
-        // Will implement when runtime types are ready
+    fn from(runtime: &control::runtime::RuntimeInfo) -> Self {
         Self {
-            name: String::new(),
-            available: false,
-            version: None,
+            name: runtime.name.clone(),
+            available: runtime.available,
+            version: runtime.version.clone(),
         }
     }
 }
@@ -275,14 +272,13 @@ pub struct WorkspaceDTO {
 }
 
 impl WorkspaceDTO {
-    fn from(_workspace: &control::workspace::Workspace) -> Self {
-        // Will implement when workspace types are ready
+    fn from(workspace: &control::workspace::Workspace) -> Self {
         Self {
-            id: String::new(),
-            project_id: String::new(),
-            path: String::new(),
-            mode: "worktree".to_string(),
-            status: "idle".to_string(),
+            id: workspace.id.clone(),
+            project_id: workspace.project_id.clone(),
+            path: workspace.path.clone(),
+            mode: workspace.mode.clone(),
+            status: workspace.status.clone(),
         }
     }
 }

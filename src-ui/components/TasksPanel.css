@@ -1,0 +1,82 @@
+.tasks-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+}
+
+.tasks-header {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.tasks-input {
+  flex: 1;
+  background: #252526;
+  border: 1px solid #3e3e42;
+  color: #e0e0e0;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.tasks-add {
+  background: #0e639c;
+  border: 1px solid #1177bb;
+  color: #fff;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.tasks-list {
+  flex: 1;
+  overflow: auto;
+}
+
+.tasks-empty {
+  color: #858585;
+  font-size: 12px;
+  padding: 12px;
+}
+
+.tasks-error {
+  color: #f48771;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.task-item {
+  border-bottom: 1px solid #3e3e42;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.task-title {
+  color: #e0e0e0;
+  font-size: 13px;
+}
+
+.task-meta {
+  color: #858585;
+  font-size: 11px;
+}
+
+.task-start {
+  justify-self: end;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  color: #e0e0e0;
+  border-radius: 3px;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.task-start:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

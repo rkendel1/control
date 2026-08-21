@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useCallback, useContext } from "react";
+import React, { useState, useCallback } from "react";
 import { invoke } from "@/lib/tauri";
-import { WorkspaceContext } from "@/hooks/useWorkspace";
 import "./SearchPanel.css";
 
 interface SearchResult {
@@ -13,11 +12,11 @@ interface SearchResult {
 }
 
 interface SearchPanelProps {
+  workspacePath?: string;
   onResultClick: (file: string, line: number) => void;
 }
 
-export default function SearchPanel({ onResultClick }: SearchPanelProps) {
-  const workspace = useContext(WorkspaceContext);
+export default function SearchPanel({ workspacePath, onResultClick }: SearchPanelProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -27,7 +26,7 @@ export default function SearchPanel({ onResultClick }: SearchPanelProps) {
 
   const handleSearch = useCallback(
     async (searchTerm: string) => {
-      if (!searchTerm.trim() || !workspace?.currentWorkspace) {
+      if (!searchTerm.trim() || !workspacePath) {
         setResults([]);
         return;
       }
@@ -37,7 +36,7 @@ export default function SearchPanel({ onResultClick }: SearchPanelProps) {
 
       try {
         const response = await invoke<any>("cmd_search", {
-          workspacePath: workspace.currentWorkspace.path,
+          workspacePath,
           pattern: searchTerm,
           includePatterns: null,
         });
@@ -62,7 +61,7 @@ export default function SearchPanel({ onResultClick }: SearchPanelProps) {
         setIsSearching(false);
       }
     },
-    [workspace?.currentWorkspace]
+    [workspacePath]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

@@ -5,6 +5,7 @@ import {
   Workspace,
   WorkspaceState,
   EditorTab,
+  GitFileStatus,
   GitStatus,
   ExplorerNode,
 } from "../types";
@@ -48,6 +49,10 @@ export function useWorkspace() {
         if (response.data.length > 0) {
           const firstProject = response.data[0];
           setCurrentProject(firstProject);
+          setWorkspaceState((prev) => ({
+            ...prev,
+            currentProjectId: firstProject.id,
+          }));
           await loadWorkspacesForProject(firstProject.id);
         }
       } else {

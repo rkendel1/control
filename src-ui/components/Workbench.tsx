@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspace } from "../hooks/useWorkspace";
 import Sidebar from "./Sidebar";
 import EditorArea from "./EditorArea";
@@ -34,7 +35,21 @@ export default function Workbench() {
   >(null);
 
   const handleAddProject = async () => {
-    const path = window.prompt("Enter absolute path to project folder:", "");
+    let path: string | null = null;
+
+    try {
+      const selected = await open({ directory: true, title: "Open Project" });
+      if (typeof selected === "string") {
+        path = selected;
+      }
+    } catch {
+      // Fall back to manual input when dialog is unavailable.
+    }
+
+    if (!path) {
+      path = window.prompt("Enter absolute path to project folder:", "");
+    }
+
     if (!path) return;
 
     const added = await addProject(path);
@@ -143,6 +158,7 @@ export default function Workbench() {
             onFileClick={openFile}
             projects={projects}
             currentProject={currentProject}
+            currentWorkspace={currentWorkspace}
           />
           <div
             className="resize-handle resize-handle-right"

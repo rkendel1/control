@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
-import { Project, ExplorerNode, GitStatus } from "../types";
+import { Project, ExplorerNode, GitStatus, Workspace } from "../types";
 import FileExplorer from "./FileExplorer";
 import GitPanel from "./GitPanel";
+import SearchPanel from "./SearchPanel";
+import TasksPanel from "./TasksPanel";
 import "./Sidebar.css";
 
 type SidebarTab = "explorer" | "git" | "search" | "tasks";
@@ -14,6 +16,7 @@ interface SidebarProps {
   onFileClick: (path: string) => void;
   projects: Project[];
   currentProject: Project;
+  currentWorkspace: Workspace | null;
 }
 
 export default function Sidebar({
@@ -22,6 +25,7 @@ export default function Sidebar({
   onFileClick,
   projects,
   currentProject,
+  currentWorkspace,
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>("explorer");
 
@@ -39,20 +43,17 @@ export default function Sidebar({
         return <GitPanel gitStatus={gitStatus} />;
       case "search":
         return (
-          <div className="sidebar-content">
-            <div className="sidebar-placeholder">Search coming soon</div>
-          </div>
+          <SearchPanel
+            workspacePath={currentWorkspace?.path}
+            onResultClick={(filePath) => onFileClick(filePath)}
+          />
         );
       case "tasks":
-        return (
-          <div className="sidebar-content">
-            <div className="sidebar-placeholder">Tasks coming soon</div>
-          </div>
-        );
+        return <TasksPanel projectId={currentProject?.id} />;
       default:
         return null;
     }
-  }, [activeTab, explorerTree, gitStatus, onFileClick]);
+  }, [activeTab, currentProject?.id, currentWorkspace?.path, explorerTree, gitStatus, onFileClick]);
 
   return (
     <div className="sidebar-container">
