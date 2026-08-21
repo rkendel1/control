@@ -527,3 +527,62 @@ pub fn cmd_index_project(
         Err(e) => Ok(CommandResponse::err(e.to_string())),
     }
 }
+
+// ─── Comprehensive Project Initialization ────────────────────
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ProjectInitResult {
+    pub project_id: String,
+    pub project_name: String,
+    pub project_path: String,
+    pub graph_id: String,
+    pub entity_count: usize,
+    pub file_count: usize,
+    pub dir_count: usize,
+    pub is_git: bool,
+    pub default_branch: Option<String>,
+    pub remote_url: Option<String>,
+}
+
+#[tauri::command]
+pub fn cmd_initialize_project(
+    project_id: String,
+    project_name: String,
+    project_path: String,
+) -> Result<CommandResponse<ProjectInitResult>, String> {
+    // Step 1: Index the project (filesystem + git)
+    match crate::graph::index_project(&project_id, &project_name, &project_path) {
+        Ok(index_result) => {
+            let graph_id = format!("graph:{}", project_id);
+
+            println!(
+                "✓ Project initialized: {} at {}",
+                project_name, project_path
+            );
+
+            Ok(CommandResponse::ok(ProjectInitResult {
+                project_id,
+                project_name,
+                project_path,
+                graph_id,
+                entity_count: index_result.file_count + index_result.dir_count + 2, // +2 for Project and Repository
+                file_count: index_result.file_count,
+                dir_count: index_result.dir_count,
+                is_git: index_result
+                    .repository
+                    .as_ref()
+                    .map(|r| r.is_git)
+                    .unwrap_or(false),
+                default_branch: index_result
+                    .repository
+                    .as_ref()
+                    .and_then(|r| r.default_branch.clone()),
+                remote_url: index_result
+                    .repository
+                    .as_ref()
+                    .and_then(|r| r.remote_url.clone()),
+            }))
+        }
+        Err(e) => Ok(CommandResponse::err(e.to_string())),
+    }
+}

@@ -84,6 +84,7 @@ fn main() {
             commands::cmd_detect_repository,
             commands::cmd_scan_directory,
             commands::cmd_index_project,
+            commands::cmd_initialize_project,
             cmd_daemon_status,
             cmd_open_project_folder,
         ])
