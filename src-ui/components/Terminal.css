@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1e1e1e;
+  background: #080d13;
   font-family: "Fira Code", "Cascadia Code", monospace;
   color: #e0e0e0;
   overflow: hidden;
@@ -11,14 +11,15 @@
 .terminal-tabs {
   display: flex;
   height: 32px;
-  background: #252526;
-  border-bottom: 1px solid #3e3e42;
+  background: #0d151f;
+  border-bottom: 1px solid #26394d;
   gap: 8px;
   padding: 0 4px;
   align-items: center;
   flex-shrink: 0;
   overflow-x: auto;
 }
+.terminal-title{padding:0 7px;color:#8da4b9;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 
 .terminal-tab {
   background: #3c3c3c;
@@ -40,9 +41,9 @@
 }
 
 .terminal-tab.active {
-  background: #1e1e1e;
-  border-color: #007acc;
-  color: #007acc;
+  background: #0a111a;
+  border-color: #2997d3;
+  color: #65c8ff;
 }
 
 .terminal-new-button {
@@ -76,11 +77,12 @@
   font-size: 10px;
   cursor: pointer;
 }
+.terminal-expand{border:1px solid #35516a;background:#152332;color:#8ed2f7;border-radius:3px;cursor:pointer;font-size:14px;line-height:18px;min-width:25px}.terminal-expand:hover{background:#1d3850;color:#fff}
 
 .terminal-xterm {
   flex: 1;
   min-height: 0;
-  padding: 4px 6px;
+  padding: 8px 10px;
 }
 
 .terminal-xterm .xterm {

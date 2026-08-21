@@ -10,8 +10,8 @@
 .editor-tabs {
   display: flex;
   height: 35px;
-  background: #1e1e1e;
-  border-bottom: 1px solid #3e3e42;
+  background: #0b121b;
+  border-bottom: 1px solid #26394d;
   overflow-x: auto;
   overflow-y: hidden;
   flex-shrink: 0;
@@ -23,8 +23,8 @@
   gap: 6px;
   padding: 0 12px;
   height: 35px;
-  background: #2d2d30;
-  border-right: 1px solid #3e3e42;
+  background: #111a26;
+  border-right: 1px solid #26394d;
   cursor: pointer;
   user-select: none;
   font-size: 13px;
@@ -38,9 +38,9 @@
 }
 
 .tab.active {
-  background: #1e1e1e;
-  color: #e0e0e0;
-  border-bottom: 2px solid #007acc;
+  background: #09101a;
+  color: #eef7ff;
+  border-bottom: 2px solid #31a9e8;
   height: 33px;
 }
 

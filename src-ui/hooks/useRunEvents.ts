@@ -37,7 +37,7 @@ export function useRunEvents(): void {
                 const eventId = createId("run_event");
                 await db.runEvents.insert({ id: eventId, runId: run.id, projectId: run.projectId, workId: run.workId, taskId: run.taskId, type: "output", content, createdAt: Date.now() }, eventId);
                 const current=await db.runs.get(run.id),summary=[current?.summary,content].filter(Boolean).join("");
-                await db.runs.update(run.id, { summary: summary.slice(-100000) });
+                await db.runs.update(run.id, { summary: summary.slice(-100000),heartbeatAt:Date.now() });
                 return;
             }
             // A deliberate stop wins over the process' non-zero exit event.

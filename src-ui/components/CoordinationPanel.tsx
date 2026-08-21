@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { EmbeddedOperation } from "@feltdb/core";
 import { invoke } from "../lib/tauri";
@@ -9,63 +9,82 @@ import { Project } from "../types";
 import "./CoordinationPanel.css";
 import { getSecretRedactor } from "../lib/core/secret-redactor";
 import {runtimePresetError,type RuntimePreset} from "../lib/runtime-policy";
-type Tab = "chat" | "agents" | "inbox" | "decisions" | "evidence" | "activity";
+import {assessModelRouting} from "../lib/model-routing";
+export type CoordinationTab = "chat" | "intelligence" | "inbox" | "decisions" | "evidence" | "activity";
 type RuntimeAvailability = {
     id: string;
     available: boolean;
     path?: string;
     model?: string;
 };
-export default function CoordinationPanel({ project }: {
+type ProviderCredentialStatus={provider:string;environmentVariable:string;configured:boolean};
+export default function CoordinationPanel({ project,initialTab="chat",hideNavigation=false,scope="project" }: {
     project: Project;
+    initialTab?:CoordinationTab;
+    hideNavigation?:boolean;
+    scope?:"global"|"project";
 }) {
     const db = getControlDatabase();
     const topology = getControlDataTopology();
     const safe = (value: string) => getSecretRedactor().redact(value).redacted;
-    const [tab, setTab] = useState<Tab>("chat"), [agents, setAgents] = useState<ControlAgent[]>([]), [tasks, setTasks] = useState<ControlTask[]>([]), [runs, setRuns] = useState<ControlRun[]>([]), [runEvents, setRunEvents] = useState<ControlRunEvent[]>([]), [activity, setActivity] = useState<ControlActivity[]>([]), [conversations, setConversations] = useState<ControlConversation[]>([]), [messages, setMessages] = useState<ControlMessage[]>([]), [decisions, setDecisions] = useState<ControlDecision[]>([]);
+    const [tab, setTab] = useState<CoordinationTab>(initialTab), [agents, setAgents] = useState<ControlAgent[]>([]), [tasks, setTasks] = useState<ControlTask[]>([]), [runs, setRuns] = useState<ControlRun[]>([]), [runEvents, setRunEvents] = useState<ControlRunEvent[]>([]), [activity, setActivity] = useState<ControlActivity[]>([]), [conversations, setConversations] = useState<ControlConversation[]>([]), [messages, setMessages] = useState<ControlMessage[]>([]), [decisions, setDecisions] = useState<ControlDecision[]>([]);
     const [works, setWorks] = useState<ControlWork[]>([]), [participants, setParticipants] = useState<ControlParticipant[]>([]), [inboxItems, setInboxItems] = useState<ControlInboxItem[]>([]), [investigations, setInvestigations] = useState<ControlInvestigation[]>([]), [evidence, setEvidence] = useState<ControlEvidence[]>([]), [outcomes, setOutcomes] = useState<ControlOutcome[]>([]);
     const [changeSets,setChangeSets]=useState<ControlChangeSet[]>([]),[testResults,setTestResults]=useState<ControlTestResult[]>([]);
     const [databaseMetadata,setDatabaseMetadata]=useState<ControlMetadata>();
     const [activeId, setActiveId] = useState<string>(), [selectedRunId, setSelectedRunId] = useState<string>(), [input, setInput] = useState(""), [sending, setSending] = useState(false), [error, setError] = useState<string>();
+    const [editingAgentId,setEditingAgentId]=useState<string>(),[agentDraft,setAgentDraft]=useState({instructions:"",runtime:"auto",preset:"local" as RuntimePreset,timeout:60});
+    const [editingIdentity,setEditingIdentity]=useState(false),[identityName,setIdentityName]=useState("");
+    const [creatingConversation,setCreatingConversation]=useState(false),[conversationTitle,setConversationTitle]=useState(""),[conversationContextId,setConversationContextId]=useState("");
     const [runtimeAvailability, setRuntimeAvailability] = useState<RuntimeAvailability[]>([]);
+    const [providerCredentials,setProviderCredentials]=useState<ProviderCredentialStatus[]>([]),[editingProvider,setEditingProvider]=useState<string>(),[providerSecret,setProviderSecret]=useState("");
+    const firstSendInFlight=useRef(false);
     const active = useMemo(() => conversations.find(c => c.id === activeId), [conversations, activeId]);
+    useEffect(()=>setTab(initialTab),[initialTab]);
     const refresh = async () => { const [a, t, r, runLog, changes,tests,events, c, d, w, people, inbox, i, e, o,metadata] = await Promise.all([db.agents.all(), db.tasks.find({ projectId: project.id }), db.runs.find({ projectId: project.id }), db.runEvents.find({ projectId: project.id }),db.changeSets.find({projectId:project.id}),db.testResults.find({projectId:project.id}), db.activity.find({ projectId: project.id }), db.conversations.find({ projectId: project.id }), db.decisions.find({ projectId: project.id }), db.works.find({ projectId: project.id }), db.participants.all(), db.inboxItems.find({ projectId: project.id }), db.investigations.find({ projectId: project.id }), db.evidence.find({ projectId: project.id }), db.outcomes.find({ projectId: project.id }),db.metadata.get("database")]); setAgents(a); setParticipants(people); setTasks(t); const orderedRuns=r.sort((x, y) => y.startedAt - x.startedAt); setRuns(orderedRuns); setRunEvents(runLog.sort((x,y)=>x.createdAt-y.createdAt));setChangeSets(changes);setTestResults(tests);setDatabaseMetadata(metadata||undefined); setSelectedRunId(id=>orderedRuns.some(item=>item.id===id)?id:orderedRuns[0]?.id); setActivity(events.sort((x, y) => y.createdAt - x.createdAt)); setConversations(c.sort((x, y) => y.updatedAt - x.updatedAt)); setDecisions(d.sort((x, y) => y.createdAt - x.createdAt)); setWorks(w); setInboxItems(inbox.sort((x, y) => y.createdAt - x.createdAt)); setInvestigations(i.sort((x, y) => y.updatedAt - x.updatedAt)); setEvidence(e.sort((x, y) => y.createdAt - x.createdAt)); setOutcomes(o.sort((x, y) => y.createdAt - x.createdAt)); setActiveId(id => c.some(item => item.id === id) ? id : c[0]?.id); };
     const refreshMessages = async (id?: string) => setMessages(id ? (await db.messages.find({ conversationId: id })).sort((a, b) => a.createdAt - b.createdAt) : []);
     useEffect(() => { void refresh(); const stops = [db.agents.subscribe(() => void refresh()), db.participants.subscribe(() => void refresh()), db.tasks.subscribe(() => void refresh()), db.runs.subscribe(() => void refresh()), db.runEvents.subscribe(() => void refresh()),db.changeSets.subscribe(()=>void refresh()),db.testResults.subscribe(()=>void refresh()), db.activity.subscribe(() => void refresh()), db.conversations.subscribe(() => void refresh()), db.decisions.subscribe(() => void refresh()), db.works.subscribe(() => void refresh()), db.inboxItems.subscribe(() => void refresh()), db.investigations.subscribe(() => void refresh()), db.evidence.subscribe(() => void refresh()), db.outcomes.subscribe(() => void refresh()),db.metadata.subscribe(()=>void refresh())]; return () => stops.forEach(stop => stop()); }, [project.id]);
-    useEffect(() => { void invoke<RuntimeAvailability[]>("cmd_runtime_availability").then(response => response.success && response.data && setRuntimeAvailability(response.data)); }, []);
+    const refreshProviderCredentials=()=>void invoke<ProviderCredentialStatus[]>("cmd_provider_credentials_list").then(response=>response.success&&response.data&&setProviderCredentials(response.data));
+    useEffect(() => { void invoke<RuntimeAvailability[]>("cmd_runtime_availability").then(response => response.success && response.data && setRuntimeAvailability(response.data));refreshProviderCredentials(); }, []);
+    const saveProviderCredential=async(provider:string)=>{if(!providerSecret.trim())return setError("API key is required");const response=await invoke("cmd_provider_credential_set",{provider,credential:providerSecret.trim()});if(!response.success)return setError(response.error||"Could not save provider credential");setProviderSecret("");setEditingProvider(undefined);setError(undefined);refreshProviderCredentials();};
+    const removeProviderCredential=async(provider:string)=>{const response=await invoke("cmd_provider_credential_delete",{provider});if(!response.success)return setError(response.error||"Could not remove provider credential");refreshProviderCredentials();};
     useEffect(() => {
         void refreshMessages(activeId);
         if (!activeId)
             return;
         return db.messages.subscribe(() => void refreshMessages(activeId));
     }, [activeId]);
-    const createConversation = async () => {
-        const activeAgents = agents.filter(item => item.status === "active"), agent = activeAgents[0];
+    const createConversation = async (requestedTitle?:string):Promise<ControlConversation|undefined> => {
+        const activeAgents = agents.filter(item => item.status === "active"), agent = activeAgents.find(item=>item.id==="control-intelligence")||activeAgents[0];
         if (!agent)
-            return setError("No active agents");
-        const title = window.prompt("Conversation title", `Chat with ${agent.name}`)?.trim();
+            {setError("Control Intelligence is unavailable");return;}
+        const title = (requestedTitle||conversationTitle||"New conversation").trim();
         if (!title)
             return;
-        const agentId = window.prompt(`Agent (${activeAgents.map(a => a.id).join(", ")})`, agent.id)?.trim();
-        if (!agentId || !activeAgents.some(a => a.id === agentId))
-            return setError("Unknown or disabled agent");
+        if(requestedTitle){
+            const existing=conversations.find(item=>item.title===title&&!item.taskId);
+            if(existing){setActiveId(existing.id);setTab("chat");setError(undefined);return existing;}
+        }
+        const agentId = agent.id;
         const contexts = [...tasks.map(task => ({ id: task.id, label: task.title, workId: task.workId, taskId: task.id })), ...investigations.map(item => ({ id: item.id, label: item.question, workId: item.workId, taskId: undefined }))];
-        const contextId = contexts.length ? window.prompt(`Optional task or investigation ID (blank for project chat)\n${contexts.map(item => `${item.id} — ${item.label}`).join("\n")}`, "")?.trim() : undefined, context = contexts.find(item => item.id === contextId);
+        const contextId=conversationContextId||undefined, context = contexts.find(item => item.id === contextId);
         if (contextId && !context)
-            return setError("Unknown Work context");
+            {setError("Unknown Work context");return;}
         const now = Date.now(), id = createId("conversation"),workId=context?.workId||createId("work");
-        if(!context)await db.works.insert({id:workId,projectId:project.id,title,intent:`Conversation with ${agents.find(item=>item.id===agentId)?.name||agentId}`,kind:"investigation",status:"active",createdAt:now,updatedAt:now},workId);
-        await db.conversations.insert({ id, projectId: project.id, workId, taskId: context?.taskId, agentId, title, createdAt: now, updatedAt: now }, id);
+        if(!context)await db.works.insert({id:workId,projectId:project.id,title,intent:"Conversation with Control Intelligence",kind:"investigation",status:"active",createdAt:now,updatedAt:now},workId);
+        const conversation={ id, projectId: project.id, workId, taskId: context?.taskId, agentId, intelligenceId:agentId, title, createdAt: now, updatedAt: now };
+        await db.conversations.insert(conversation, id);
         setActiveId(id);
         setTab("chat");
+        setCreatingConversation(false);setConversationTitle("");setConversationContextId("");setError(undefined);
+        return conversation;
     };
-    const sendMessage = async (rawContent:string,retryMessage?:ControlMessage) => {
-        const conversation=active;
+    const sendMessage = async (rawContent:string,retryMessage?:ControlMessage,conversationOverride?:ControlConversation) => {
+        const conversation=conversationOverride||active;
         if (!conversation || !rawContent.trim() || sending)
             return;
         const agent = agents.find(a => a.id === conversation.agentId);
         if (!agent)
-            return setError("Conversation agent is unavailable");
+            return setError("Control Intelligence is unavailable");
         const content = rawContent.trim(), safeContent = safe(content);
         if(!retryMessage)setInput("");
         setSending(true);
@@ -73,23 +92,33 @@ export default function CoordinationPanel({ project }: {
         let userId=retryMessage?.id,runId:string|undefined;
         try {
             const now = Date.now();
-            if(userId)await db.messages.update(userId,{deliveryStatus:"pending",error:undefined});
-            else {userId=createId("message");await db.messages.insert({ id: userId, conversationId: conversation.id, senderId: LOCAL_PARTICIPANT_ID, role: "user", type: "message", content: safeContent, deliveryStatus:"pending",createdAt: now }, userId);}
+            if(userId){
+                await db.messages.update(userId,{deliveryStatus:"pending",error:undefined});
+                setMessages(current=>current.map(message=>message.id===userId?{...message,deliveryStatus:"pending",error:undefined}:message));
+            }
+            else {
+                userId=createId("message");
+                const pendingMessage:ControlMessage={ id: userId, conversationId: conversation.id, senderId: LOCAL_PARTICIPANT_ID, role: "user", type: "message", content: safeContent, deliveryStatus:"pending",createdAt: now };
+                setMessages(current=>current.some(message=>message.id===pendingMessage.id)?current:[...current,pendingMessage]);
+                await db.messages.insert(pendingMessage, userId);
+            }
             await db.conversations.update(conversation.id, { updatedAt: now });
             const history = messages.filter(message=>message.id!==userId).slice(-20).map(m => `${m.role}: ${m.content}`).join("\n");
             const task = tasks.find(item => item.id === conversation.taskId), work = works.find(item => item.id === conversation.workId), investigation = investigations.find(item => item.workId === conversation.workId);
             const instructions = [agent.instructions, work ? `Related Work: ${work.title}\nIntent: ${work.intent}` : "", task ? `Related task: ${task.title}\n${task.description}\nAcceptance criteria:\n${task.acceptanceCriteria.map(item => `- ${item}`).join("\n")}` : "", investigation ? `Investigation: ${investigation.question}\nHypotheses: ${investigation.hypotheses.join("; ")}\nSources: ${investigation.sources.join("; ")}\nContradictions: ${investigation.contradictions.join("; ")}\nGaps: ${investigation.gaps.join("; ")}\nConclusion: ${investigation.conclusion || "open"}` : ""].filter(Boolean).join("\n\n");
             if(!conversation.workId)throw new Error("Conversation Work context is unavailable");
-            runId=createId("run");await db.runs.insert({id:runId,projectId:project.id,workId:conversation.workId,taskId:conversation.taskId,kind:"conversation",conversationId:conversation.id,requestMessageId:userId,agentId:agent.id,runtime:"resolving",status:"starting",startedAt:now},runId);
+            const conversationRuns=runs.filter(item=>item.conversationId===conversation.id),routing=assessModelRouting({title:content,description:history,failedRuns:conversationRuns.filter(item=>item.status==="failed").length});
+            const preferredRuntime=agent.runtime||routing.tier;
+            runId=createId("run");await db.runs.insert({id:runId,projectId:project.id,workId:conversation.workId,taskId:conversation.taskId,kind:"conversation",conversationId:conversation.id,requestMessageId:userId,agentId:agent.id,runtime:"resolving",routingTier:routing.tier,routingReason:agent.runtime?`${agent.runtime} — Intelligence profile override`:routing.reason,status:"starting",startedAt:now},runId);
             await db.messages.update(userId,{runId});
-            const response = await invoke<{pid:number;runtime:string;processStartedAt:number}>("cmd_agent_chat", { runId,projectPath: project.path, projectName: project.name, agentName: agent.name, agentInstructions: instructions, history, content, preferredRuntime: agent.runtime,executionTimeoutMinutes:agent.timeoutMinutes });
+            const response = await invoke<{pid:number;runtime:string;processStartedAt:number}>("cmd_agent_chat", { runId,projectPath: project.path, projectName: project.name, agentName: agent.name, agentInstructions: instructions, history, content, preferredRuntime,executionTimeoutMinutes:agent.timeoutMinutes });
             if(!response.success||!response.data)throw new Error(response.error || "Agent response failed");
             const launchedRun=await db.runs.get(runId);if(launchedRun?.status==="starting")await db.runs.update(runId,{runtime:response.data.runtime,status:"running",pid:response.data.pid,processStartedAt:response.data.processStartedAt});
             const activityId=createId("activity");await db.activity.insert({id:activityId,projectId:project.id,workId:conversation.workId,taskId:conversation.taskId,runId,type:"conversation_started",actor:agent.id,summary:`${agent.name} started a response in ${conversation.title}`,createdAt:now},activityId);
         }
         catch (reason) {
             const message=safe(reason instanceof Error ? reason.message : String(reason));
-            if(userId)await db.messages.update(userId,{deliveryStatus:"failed",error:message});
+            if(userId){await db.messages.update(userId,{deliveryStatus:"failed",error:message});setMessages(current=>current.map(item=>item.id===userId?{...item,deliveryStatus:"failed",error:message}:item));}
             const failedAt=Date.now();if(runId)await db.runs.update(runId,{status:"failed",error:message,completedAt:failedAt});
             const activityId=createId("activity");await db.activity.insert({id:activityId,projectId:project.id,workId:conversation.workId,taskId:conversation.taskId,runId,type:"conversation_failed",actor:agent.id,summary:`Conversation attempt failed in ${conversation.title}`,details:message,createdAt:failedAt},activityId);
             if(conversation.workId){const inboxId=createId("inbox");await db.inboxItems.insert({id:inboxId,projectId:project.id,workId:conversation.workId,taskId:conversation.taskId,conversationId:conversation.id,fromParticipantId:agent.id,toParticipantId:LOCAL_PARTICIPANT_ID,type:"escalation",title:`Conversation failed: ${conversation.title}`,body:message,status:"open",createdAt:failedAt,updatedAt:failedAt},inboxId);}
@@ -99,7 +128,7 @@ export default function CoordinationPanel({ project }: {
             setSending(false);
         }
     };
-    const send=()=>sendMessage(input);
+    const send=async()=>{if(!input.trim()||sending||firstSendInFlight.current)return;firstSendInFlight.current=true;try{const conversation=active||await createConversation("General");if(conversation)await sendMessage(input,undefined,conversation);}finally{firstSendInFlight.current=false;}};
     const answer = async (decision: ControlDecision, value: string) => {
         const answeredAt = Date.now(), safeValue = safe(value);
         await db.decisions.update(decision.id, { status: "answered", answer: safeValue, answeredAt });
@@ -130,26 +159,19 @@ export default function CoordinationPanel({ project }: {
             catch(reason){ setError(`Decision saved, but automatic resume failed: ${reason instanceof Error?reason.message:String(reason)}`); }
         }
     };
-    const editAgent = async (agent: ControlAgent) => {
-        const instructions = window.prompt("Agent instructions", agent.instructions);
-        if (instructions === null)
-            return;
-        const runtime = window.prompt("Runtime: auto, claude-code, codex, opencode, ollama, or ollama:model", agent.runtime || "auto");
-        if (runtime === null)
-            return;
-        const normalized = runtime.trim();
+    const editAgent = (agent: ControlAgent) => {
+        setError(undefined);setEditingAgentId(agent.id);setAgentDraft({instructions:agent.instructions,runtime:agent.runtime||"auto",preset:agent.executionPolicy.network?"connected":agent.executionPolicy.shell?"local":"observe",timeout:agent.timeoutMinutes||60});
+    };
+    const saveAgent = async (agent:ControlAgent) => {
+        const normalized = agentDraft.runtime.trim();
         if (!(["auto", "claude-code", "codex", "opencode", "ollama"].includes(normalized)||normalized.startsWith("ollama:")&&normalized.length>7))
             return setError("Unknown runtime");
-        const current = agent.executionPolicy.network ? "connected" : agent.executionPolicy.shell ? "local" : "observe", preset = window.prompt("Execution policy: observe, local, or connected", current)?.trim();
-        if (!preset)
-            return;
-        if (!["observe", "local", "connected"].includes(preset))
-            return setError("Unknown execution policy");
-        const policyError=runtimePresetError(normalized,preset as RuntimePreset);if(policyError)return setError(policyError);
-        const timeout=Number(window.prompt("Maximum run time in minutes (1–240)",String(agent.timeoutMinutes||60)));
+        const preset=agentDraft.preset,policyError=runtimePresetError(normalized,preset);if(policyError)return setError(policyError);
+        const timeout=Number(agentDraft.timeout);
         if(!Number.isInteger(timeout)||timeout<1||timeout>240)return setError("Timeout must be a whole number from 1 to 240 minutes");
         const executionPolicy: ControlAgent["executionPolicy"] = preset === "observe" ? { filesystem: "read-only", shell: false, network: false } : preset === "connected" ? { filesystem: "workspace-write", shell: true, network: true } : { filesystem: "workspace-write", shell: true, network: false };
-        await db.agents.update(agent.id, { instructions: safe(instructions.trim()), runtime: normalized === "auto" ? undefined : normalized,timeoutMinutes:timeout, executionPolicy, updatedAt: Date.now() });
+        const changes={instructions:safe(agentDraft.instructions.trim()),runtime:normalized==="auto"?undefined:normalized,timeoutMinutes:timeout,executionPolicy,updatedAt:Date.now()};
+        await db.agents.update(agent.id,changes);if(await db.intelligence.exists(agent.id))await db.intelligence.update(agent.id,changes);setEditingAgentId(undefined);setError(undefined);
     };
     const createAgent = async () => {
         const name = window.prompt("Agent name")?.trim();
@@ -166,14 +188,13 @@ export default function CoordinationPanel({ project }: {
         if (!instructions)
             return;
         const now = Date.now(), safeName = safe(name);
-        await db.agents.insert({ id, name: safeName, description: safe(description), instructions: safe(instructions), capabilities: [],timeoutMinutes:60, executionPolicy: { filesystem: "workspace-write", shell: true, network: false }, status: "active", createdAt: now, updatedAt: now }, id);
+        const profile={ id, name: safeName, description: safe(description), instructions: safe(instructions), capabilities: [],timeoutMinutes:60, executionPolicy: { filesystem: "workspace-write" as const, shell: true, network: false }, status: "active" as const, createdAt: now, updatedAt: now };
+        await db.agents.insert(profile, id);await db.intelligence.insert({...profile,provider:"auto"},id);
         await db.participants.insert({ id, type: "agent", name: safeName, roles: ["agent"], capabilities: [], status: "active", createdAt: now, updatedAt: now }, id);
     };
-    const toggleAgent = async (agent: ControlAgent) => { const status = agent.status === "active" ? "disabled" : "active", updatedAt = Date.now(); await db.agents.update(agent.id, { status, updatedAt }); if (await db.participants.exists(agent.id))
-        await db.participants.update(agent.id, { status, updatedAt }); };
-    const editLocalParticipant = async () => { const participant = participants.find(item => item.id === LOCAL_PARTICIPANT_ID); if (!participant)
-        return; const name = window.prompt("Your display name", participant.name)?.trim(); if (!name)
-        return; await db.participants.update(participant.id, { name: safe(name), updatedAt: Date.now() }); };
+    const toggleAgent = async (agent: ControlAgent) => { try{const status = agent.status === "active" ? "disabled" : "active", updatedAt = Date.now(); await db.agents.update(agent.id, { status, updatedAt });if(await db.intelligence.exists(agent.id))await db.intelligence.update(agent.id,{status,updatedAt}); if (await db.participants.exists(agent.id))await db.participants.update(agent.id, { status, updatedAt });setError(undefined);}catch(reason){setError(reason instanceof Error?reason.message:String(reason));} };
+    const editLocalParticipant = () => { const participant = participants.find(item => item.id === LOCAL_PARTICIPANT_ID);if(!participant)return setError("Local participant is unavailable");setIdentityName(participant.name);setEditingIdentity(true);setError(undefined);};
+    const saveLocalParticipant=async()=>{const participant=participants.find(item=>item.id===LOCAL_PARTICIPANT_ID),name=identityName.trim();if(!participant)return setError("Local participant is unavailable");if(!name)return setError("Display name is required");try{await db.participants.update(participant.id,{name:safe(name),updatedAt:Date.now()});setEditingIdentity(false);setError(undefined);}catch(reason){setError(reason instanceof Error?reason.message:String(reason));}};
     const createInvestigation = async () => {
         const question = window.prompt("Investigation question")?.trim();
         if (!question)
@@ -280,26 +301,28 @@ export default function CoordinationPanel({ project }: {
     </div>;};
     const stopRun=async(run:ControlRun)=>{if(!run.pid)return;const response=await invoke("cmd_agent_run_stop",{pid:run.pid,expectedProcessStartedAt:run.processStartedAt});if(!response.success)return setError(response.error);const now=Date.now();await db.runs.update(run.id,{status:"stopped",completedAt:now,error:"Stopped by user"});if(run.kind==="conversation"){if(run.requestMessageId)await db.messages.update(run.requestMessageId,{deliveryStatus:"failed",error:"Response stopped by user",runId:run.id});await db.works.update(run.workId,{status:"active",updatedAt:now});}else if(run.taskId){await db.transitionRuntimeWork(run.taskId,"requeued",{updatedAt:now});}const id=createId("activity");await db.activity.insert({id,projectId:run.projectId,workId:run.workId,taskId:run.taskId,runId:run.id,type:"run_stopped",actor:LOCAL_PARTICIPANT_ID,summary:run.kind==="conversation"?"Conversation response stopped":"Agent run stopped",createdAt:now},id);};
     return <div className="coordination-panel">
-        <div className="coordination-tabs">{(["chat","agents","inbox","decisions","evidence","activity"] as Tab[]).map(item=><button key={item} className={tab===item?"active":""} onClick={()=>setTab(item)}>{item}{item==="inbox"&&inboxCount?` ${inboxCount}`:""}</button>)}</div>
+        {!hideNavigation&&<div className="coordination-tabs">{(["chat","intelligence","inbox","decisions","evidence","activity"] as CoordinationTab[]).map(item=><button key={item} className={tab===item?"active":""} onClick={()=>setTab(item)}>{item}{item==="inbox"&&inboxCount?` ${inboxCount}`:""}</button>)}</div>}
         {error&&<div className="coordination-error">{error}</div>}
         {tab==="chat"&&<div className="chat-pane">
-            <div className="conversation-toolbar"><select value={activeId||""} onChange={event=>setActiveId(event.target.value||undefined)}><option value="">No conversation</option>{conversations.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select><button onClick={()=>void createConversation()}>+</button></div>
+            <div className="conversation-toolbar"><select value={activeId||""} onChange={event=>setActiveId(event.target.value||undefined)}><option value="">No conversation</option>{conversations.map(item=><option key={item.id} value={item.id}>{item.title}{conversations.filter(candidate=>candidate.title===item.title).length>1?` · ${new Date(item.createdAt).toLocaleString()}`:""}</option>)}</select><button title="New conversation" onClick={()=>setCreatingConversation(value=>!value)}>+</button></div>
+            {creatingConversation&&<div className="conversation-create"><input autoFocus placeholder="Conversation title" value={conversationTitle} onChange={event=>setConversationTitle(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void createConversation();}}/><select value={conversationContextId} onChange={event=>setConversationContextId(event.target.value)}><option value="">Project conversation</option>{tasks.map(task=><option key={task.id} value={task.id}>Task: {task.title}</option>)}{investigations.map(item=><option key={item.id} value={item.id}>Investigation: {item.question}</option>)}</select><div className="decision-options"><button disabled={!conversationTitle.trim()} onClick={()=>void createConversation()}>Create</button><button onClick={()=>setCreatingConversation(false)}>Cancel</button></div></div>}
             <div className="conversation-context">{active?`${agents.find(agent=>agent.id===active.agentId)?.name||active.agentId} · ${project.name}${active.taskId?` · ${tasks.find(task=>task.id===active.taskId)?.title||"task"}`:""}`:"Create a project or task conversation"}</div>
-            <div className="message-list">{messages.map(message=><div key={message.id} className={`message ${message.role} ${message.deliveryStatus||"delivered"}`}><span className="message-sender">{message.role==="user"?participants.find(item=>item.id===message.senderId)?.name||"You":agents.find(item=>item.id===message.senderId)?.name||message.senderId}{message.deliveryStatus==="pending"?" · sending":message.deliveryStatus==="failed"?" · failed":""}</span><div>{message.content}</div>{message.deliveryStatus==="failed"&&<div className="message-failure"><span>{message.error}</span><button disabled={sending} onClick={()=>void sendMessage(message.content,message)}>Retry</button></div>}</div>)}{sending&&<div className="message-status">Agent is working…</div>}</div>
-            <div className="chat-input"><textarea value={input} onChange={event=>setInput(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send();}}} placeholder="Message the agent…" disabled={!active||sending}/><button disabled={!active||!input.trim()||sending} onClick={()=>void send()}>Send</button></div>
+            <div className="message-list">{messages.map(message=><div key={message.id} className={`message ${message.role} ${message.deliveryStatus||"delivered"}`}><span className="message-sender">{message.role==="user"?participants.find(item=>item.id===message.senderId)?.name||"You":agents.find(item=>item.id===message.senderId)?.name||message.senderId}{message.deliveryStatus==="pending"?" · sending":message.deliveryStatus==="failed"?" · failed":""}</span><div>{message.content}</div>{message.deliveryStatus==="failed"&&<div className="message-failure"><span>{message.error}</span><button disabled={sending} onClick={()=>void sendMessage(message.content,message)}>Retry</button></div>}</div>)}{sending&&<div className="message-status">Control Intelligence is working…</div>}</div>
+            <div className="chat-input"><textarea value={input} onChange={event=>setInput(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send();}}} placeholder={active?"Message Control Intelligence…":"Type a message to start a conversation…"} disabled={sending}/><button disabled={!input.trim()||sending} onClick={()=>void send()}>Send</button></div>
         </div>}
-        {tab==="agents"&&<div className="agent-list">
-            <div className="agent-directory-label">Current human</div>{participants.filter(item=>item.type==="human").map(person=><div className="agent-card" key={person.id}><div className="agent-card-title"><span>{person.name}</span><span className="agent-state active">{person.id}</span></div><p>{person.roles.join(" · ")}</p>{person.id===LOCAL_PARTICIPANT_ID&&<button onClick={()=>void editLocalParticipant()}>Edit identity</button>}</div>)}
+        {tab==="intelligence"&&<div className="agent-list">
+            <div className="agent-directory-label">Current human</div>{participants.filter(item=>item.type==="human").map(person=><div className="agent-card" key={person.id}><div className="agent-card-title"><span>{person.name}</span><span className="agent-state active">{person.id}</span></div><p>{person.roles.join(" · ")}</p>{person.id===LOCAL_PARTICIPANT_ID&&(editingIdentity?<div className="intelligence-editor"><label>Display name<input autoFocus value={identityName} onChange={event=>setIdentityName(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void saveLocalParticipant();}}/></label><div className="decision-options"><button onClick={()=>void saveLocalParticipant()}>Save</button><button onClick={()=>setEditingIdentity(false)}>Cancel</button></div></div>:<button onClick={editLocalParticipant}>Edit identity</button>)}</div>)}
             <div className="agent-directory-label">Detected runtimes</div>{runtimeAvailability.map(runtime=><div className="agent-card" key={runtime.id}><div className="agent-card-title"><span>{runtime.id}</span><span className={`agent-state ${runtime.available?"active":"disabled"}`}>{runtime.available?"ready":"missing"}</span></div>{runtime.path&&<p>{runtime.path}{runtime.model?` · ${runtime.model}`:""}</p>}</div>)}
+            <div className="agent-directory-label">Provider credentials · OS keychain</div>{providerCredentials.map(item=><div className="agent-card" key={item.provider}><div className="agent-card-title"><span>{item.provider}</span><span className={`agent-state ${item.configured?"active":"disabled"}`}>{item.configured?"configured":"not configured"}</span></div><p>{item.environmentVariable} · secret value is never stored in FeltDB</p>{editingProvider===item.provider?<div className="intelligence-editor"><label>API key<input autoFocus type="password" autoComplete="off" value={providerSecret} onChange={event=>setProviderSecret(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void saveProviderCredential(item.provider);}}/></label><div className="decision-options"><button onClick={()=>void saveProviderCredential(item.provider)}>Save to keychain</button><button onClick={()=>{setEditingProvider(undefined);setProviderSecret("");}}>Cancel</button></div></div>:<div className="decision-options"><button onClick={()=>{setEditingProvider(item.provider);setProviderSecret("");}}>Set key</button>{item.configured&&<button onClick={()=>void removeProviderCredential(item.provider)}>Remove</button>}</div>}</div>)}
             <div className="agent-directory-label">Run history · {runs.length}</div>{runs.map(run=><div className={`agent-card run-card ${selectedRunId===run.id?"selected":""}`} key={run.id} onClick={()=>setSelectedRunId(run.id)}><div className="agent-card-title"><span>{tasks.find(task=>task.id===run.taskId)?.title||conversations.find(item=>item.id===run.conversationId)?.title||run.id}</span><span className={`agent-state ${run.status}`}>{run.status}</span></div><p>{agents.find(agent=>agent.id===run.agentId)?.name||run.agentId} · {run.runtime} · {new Date(run.startedAt).toLocaleString()}</p>{selectedRunId===run.id&&runArtifacts(run)}{selectedRunId===run.id&&<div className="run-timeline">{runEvents.filter(event=>event.runId===run.id).map(event=><div className="run-event" key={event.id}><span>{event.type.replace(/_/g," ")} · {new Date(event.createdAt).toLocaleTimeString()}</span>{event.content&&<div>{event.content}</div>}</div>)}{runEvents.every(event=>event.runId!==run.id)&&<div className="coordination-empty">No run events recorded</div>}</div>}{run.summary&&<div className="run-summary">{run.summary}</div>}{run.error&&<div className="coordination-error">{run.error}</div>}{["starting","running"].includes(run.status)&&run.pid&&<button onClick={event=>{event.stopPropagation();void stopRun(run);}}>Stop</button>}</div>)}
-            <div className="agent-directory-label">Configured agents <button onClick={()=>void createAgent()}>+</button></div>{agents.map(agent=><div className="agent-card" key={agent.id}><div className="agent-card-title"><span>{agent.name}</span><span className={`agent-state ${agent.status}`}>{agent.status}</span></div><p>{agent.description}</p><div className="capabilities">{agent.runtime||"auto"} · {agent.executionPolicy.filesystem} · shell {agent.executionPolicy.shell?"on":"off"} · network {agent.executionPolicy.network?"on":"off"} · timeout {agent.timeoutMinutes||60}m · {agent.capabilities.join(" · ")}</div><div className="decision-options"><button onClick={()=>void editAgent(agent)}>Configure</button><button onClick={()=>void toggleAgent(agent)}>{agent.status==="active"?"Disable":"Enable"}</button></div></div>)}
+            <div className="agent-directory-label">Intelligence profiles (advanced) <button onClick={()=>void createAgent()}>+</button></div>{agents.map(agent=><div className="agent-card" key={agent.id}><div className="agent-card-title"><span>{agent.name}</span><span className={`agent-state ${agent.status}`}>{agent.status}</span></div><p>{agent.description}</p><div className="capabilities">{agent.runtime||"auto"} · {agent.executionPolicy.filesystem} · shell {agent.executionPolicy.shell?"on":"off"} · network {agent.executionPolicy.network?"on":"off"} · timeout {agent.timeoutMinutes||60}m · {agent.capabilities.join(" · ")}</div>{editingAgentId===agent.id?<div className="intelligence-editor"><label>Instructions<textarea value={agentDraft.instructions} onChange={event=>setAgentDraft(value=>({...value,instructions:event.target.value}))}/></label><label>Runtime<select value={agentDraft.runtime} onChange={event=>setAgentDraft(value=>({...value,runtime:event.target.value}))}><option value="auto">Automatic</option><option value="claude-code">Claude Code</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="ollama">Ollama</option></select></label><label>Execution policy<select value={agentDraft.preset} onChange={event=>setAgentDraft(value=>({...value,preset:event.target.value as RuntimePreset}))}><option value="observe">Observe</option><option value="local">Local workspace</option><option value="connected">Connected</option></select></label><label>Timeout (minutes)<input type="number" min="1" max="240" value={agentDraft.timeout} onChange={event=>setAgentDraft(value=>({...value,timeout:Number(event.target.value)}))}/></label><div className="decision-options"><button onClick={()=>void saveAgent(agent)}>Save</button><button onClick={()=>setEditingAgentId(undefined)}>Cancel</button></div></div>:<div className="decision-options"><button onClick={()=>editAgent(agent)}>Configure</button><button onClick={()=>void toggleAgent(agent)}>{agent.status==="active"?"Disable":"Enable"}</button></div>}</div>)}
         </div>}
         {tab==="inbox"&&<div className="decision-list">
             {inboxCount===0&&<div className="coordination-empty">Inbox clear</div>}
             {openInbox.map(item=><div className="decision-card" key={item.id}><strong>{item.type}: {item.title}</strong><p>{participants.find(person=>person.id===item.fromParticipantId)?.name||item.fromParticipantId} → {participants.find(person=>person.id===item.toParticipantId)?.name||item.toParticipantId} · {works.find(work=>work.id===item.workId)?.title||"Work"}</p>{item.body&&<div className="run-summary">{item.body}</div>}<div className="decision-options">{item.status==="open"&&<button onClick={()=>void db.inboxItems.update(item.id,{status:"acknowledged",updatedAt:Date.now()})}>Acknowledge</button>}<button onClick={()=>void db.inboxItems.update(item.id,{status:"acted",updatedAt:Date.now(),actedAt:Date.now()})}>Done</button></div></div>)}
             {decisions.filter(item=>item.status==="pending").map(item=><div className="decision-card" key={item.id}><strong>Question: {item.question}</strong><p>{works.find(work=>work.id===item.workId)?.title||"Work"}</p><button onClick={()=>setTab("decisions")}>Answer</button></div>)}
             {tasks.filter(item=>["review","awaiting-input","failed"].includes(item.status)).map(item=><div className="decision-card" key={item.id}><strong>{item.status==="review"?"Ready for review":item.status==="awaiting-input"?"Awaiting input":"Run failed"}: {item.title}</strong><p>{agents.find(agent=>agent.id===item.assignedTo)?.name||"Unassigned"}</p><button onClick={()=>window.dispatchEvent(new CustomEvent("control-command",{detail:"start-agent"}))}>Open task</button></div>)}
-            {runs.filter(item=>item.status==="interrupted").map(item=><div className="decision-card" key={item.id}><strong>Interrupted Run</strong><p>{tasks.find(task=>task.id===item.taskId)?.title||item.taskId}</p><button onClick={()=>setTab("agents")}>Inspect Run</button></div>)}
+            {runs.filter(item=>item.status==="interrupted").map(item=><div className="decision-card" key={item.id}><strong>Interrupted Run</strong><p>{tasks.find(task=>task.id===item.taskId)?.title||item.taskId}</p><button onClick={()=>setTab("intelligence")}>Inspect Run</button></div>)}
         </div>}
         {tab==="decisions"&&<div className="decision-list">{decisions.length===0&&<div className="coordination-empty">No decisions</div>}{decisions.map(decision=><div className="decision-card" key={decision.id}><strong>{decision.question}</strong>{decision.context&&<p>{decision.context}</p>}{decision.status==="pending"?<div className="decision-options">{decision.options.map(option=><button key={option} onClick={()=>void answer(decision,option)}>{option}</button>)}<button onClick={()=>{const value=window.prompt("Your answer")?.trim();if(value)void answer(decision,value);}}>Custom…</button></div>:<div className="decision-answer">Answered: {decision.answer}</div>}</div>)}</div>}
         {tab==="evidence"&&<div className="decision-list">

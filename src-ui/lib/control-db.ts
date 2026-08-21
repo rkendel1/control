@@ -29,6 +29,16 @@ export type ControlAgent = {
     createdAt: number;
     updatedAt: number;
 };
+/** Legacy execution-profile shape retained for migration compatibility. */
+export type ControlIntelligence = ControlAgent & { provider?: string; model?: string };
+export type ControlSkill = { id:string; name:string; description:string; instructions:string; tags:string[]; status:"active"|"disabled"; createdAt:number; updatedAt:number };
+export type ControlCapability = { id:string; name:string; description:string; risk:"low"|"medium"|"high"; approval:"never"|"high-risk"|"always"; enabled:boolean; createdAt:number; updatedAt:number };
+export type ControlOrganization = { id:string; name:string; topology:"solo"|"managed"|"self-hosted"|"hybrid"; createdAt:number; updatedAt:number };
+export type ControlMembership = { id:string; organizationId:string; participantId:string; role:"owner"|"admin"|"member"|"viewer"; createdAt:number; updatedAt:number };
+export type ControlClaim = { id:string; projectId:string; workId:string; statement:string; status:"proposed"|"supported"|"contradicted"|"unknown"; evidenceIds:string[]; createdAt:number; updatedAt:number };
+export type ControlRepository = { id:string; projectId:string; rootPath:string; structureSummary:string; components:string[]; environments:string[]; deployTargets:string[]; dependencies:string[]; conventions:string[]; lastScannedAt:number; createdAt:number; updatedAt:number };
+export type ControlOperationalCommand = { id:string; projectId:string; repositoryId:string; name:string; purpose:"build"|"test"|"lint"|"run"|"deploy"|"other"; command:string; source:string; lastVerifiedAt?:number; verifiedBy?:string; lastResult?:"passed"|"failed"|"unknown"; runId?:string; createdAt:number; updatedAt:number };
+export type ControlDocumentationRecord = { id:string; projectId:string; repositoryId:string; path:string; fingerprint:string; status:"current"|"possibly-stale"|"missing"; checkedAt:number; createdAt:number; updatedAt:number };
 export type ControlParticipant = {
     id: string;
     type: "human" | "agent" | "system";
@@ -74,6 +84,8 @@ export type ControlTask = {
     updatedAt: number;
     completedAt?: number;
     archivedFrom?: Exclude<ControlTask["status"], "archived">;
+    order?: number;
+    modelPreference?: "auto" | "local" | "frontier";
 };
 export type ControlConversation = {
     id: string;
@@ -81,6 +93,7 @@ export type ControlConversation = {
     taskId?: string;
     workId?: string;
     agentId: string;
+    intelligenceId?: string;
     title: string;
     createdAt: number;
     updatedAt: number;
@@ -137,8 +150,14 @@ export type ControlRun = {
     conversationId?: string;
     requestMessageId?: string;
     agentId: string;
+    intelligenceId?: string;
+    skillIds?: string[];
+    capabilityIds?: string[];
     runtime: string;
-    status: "starting" | "running" | "awaiting-input" | "completed" | "failed" | "stopped" | "interrupted";
+    routingTier?: "local" | "frontier";
+    routingReason?: string;
+    status: "queued" | "starting" | "running" | "awaiting-input" | "completed" | "failed" | "stopped" | "interrupted";
+    heartbeatAt?: number;
     pid?: number;
     processStartedAt?: number;
     startedAt: number;
@@ -276,6 +295,15 @@ export class ControlDatabase {
     readonly projects: Collection<ControlProject>;
     readonly works: Collection<ControlWork>;
     readonly agents: Collection<ControlAgent>;
+    readonly intelligence: Collection<ControlIntelligence>;
+    readonly skills: Collection<ControlSkill>;
+    readonly capabilities: Collection<ControlCapability>;
+    readonly organizations: Collection<ControlOrganization>;
+    readonly memberships: Collection<ControlMembership>;
+    readonly claims: Collection<ControlClaim>;
+    readonly repositories: Collection<ControlRepository>;
+    readonly operationalCommands: Collection<ControlOperationalCommand>;
+    readonly documentation: Collection<ControlDocumentationRecord>;
     readonly participants: Collection<ControlParticipant>;
     readonly tasks: Collection<ControlTask>;
     readonly conversations: Collection<ControlConversation>;
@@ -303,6 +331,15 @@ export class ControlDatabase {
         this.projects = this.db.collection("control_projects");
         this.works = this.db.collection("control_work");
         this.agents = this.db.collection("control_agents");
+        this.intelligence = this.db.collection("control_intelligence");
+        this.skills = this.db.collection("control_skills");
+        this.capabilities = this.db.collection("control_capabilities");
+        this.organizations = this.db.collection("control_organizations");
+        this.memberships = this.db.collection("control_memberships");
+        this.claims = this.db.collection("control_claims");
+        this.repositories = this.db.collection("control_repositories");
+        this.operationalCommands = this.db.collection("control_operational_commands");
+        this.documentation = this.db.collection("control_documentation");
         this.participants = this.db.collection("control_participants");
         this.tasks = this.db.collection("control_tasks");
         this.conversations = this.db.collection("control_conversations");
@@ -334,6 +371,10 @@ export class ControlDatabase {
         this.evidence.createIndex({ name: "work_idx", type: "hash", field: "workId" });
         this.outcomes.createIndex({ name: "work_idx", type: "hash", field: "workId" });
         this.investigations.createIndex({ name: "project_idx", type: "hash", field: "projectId" });
+        this.claims.createIndex({ name: "work_idx", type: "hash", field: "workId" });
+        this.repositories.createIndex({ name: "project_idx", type: "hash", field: "projectId" });
+        this.operationalCommands.createIndex({ name: "project_idx", type: "hash", field: "projectId" });
+        this.documentation.createIndex({ name: "project_idx", type: "hash", field: "projectId" });
     }
     async initialize(): Promise<void> {
         const runtime = this.db.runtime();
@@ -343,7 +384,7 @@ export class ControlDatabase {
         await this.migrateLegacyNamespace();
         const timestamp = Date.now();
         if ((await this.metadata.count()) === 0) {
-            await this.metadata.insert({ id: "database", schemaVersion: 13, createdAt: timestamp, updatedAt: timestamp }, "database");
+            await this.metadata.insert({ id: "database", schemaVersion: 16, createdAt: timestamp, updatedAt: timestamp }, "database");
         }
         if ((await this.settings.count()) === 0) {
             await this.settings.insert({ id: "workspace", currentParticipantId: LOCAL_PARTICIPANT_ID, openFilesByProject: {}, activeFileByProject: {}, layout: { sidebarWidth: 250, agentPanelWidth: 280, terminalHeight: 200 }, createdAt: timestamp, updatedAt: timestamp }, "workspace");
@@ -449,6 +490,32 @@ export class ControlDatabase {
         const conversationRunMetadata=await this.metadata.get("database");
         if((conversationRunMetadata?.schemaVersion||1)<12){for(const conversation of await this.conversations.all())if(!conversation.workId){const workId=createId("work");await this.works.insert({id:workId,projectId:conversation.projectId,title:conversation.title,intent:`Conversation: ${conversation.title}`,kind:"investigation",status:"active",createdAt:conversation.createdAt,updatedAt:timestamp},workId);await this.conversations.update(conversation.id,{workId});}await this.metadata.update("database",{schemaVersion:12,updatedAt:timestamp});}
         const integrityMetadata=await this.metadata.get("database");if((integrityMetadata?.schemaVersion||1)<13)await this.metadata.update("database",{schemaVersion:13,updatedAt:timestamp});
+        const canonicalMetadata=await this.metadata.get("database");
+        if((canonicalMetadata?.schemaVersion||1)<14){
+            for(const agent of await this.agents.all())if(!(await this.intelligence.exists(agent.id)))await this.intelligence.insert({...agent,provider:"auto"},agent.id);
+            if(!(await this.intelligence.exists("control-intelligence"))){const base={...DEFAULT_AGENTS[0],id:"control-intelligence",name:"Control Intelligence",description:"Control's automatic provider-independent intelligence for everyday work.",createdAt:timestamp,updatedAt:timestamp,provider:"auto"};await this.intelligence.insert(base,base.id);if(!(await this.agents.exists(base.id)))await this.agents.insert(base,base.id);if(!(await this.participants.exists(base.id)))await this.participants.insert({id:base.id,type:"system",name:base.name,roles:["intelligence"],capabilities:base.capabilities,status:"active",createdAt:timestamp,updatedAt:timestamp},base.id);}
+            if(!(await this.skills.exists("software-development")))await this.skills.insert({id:"software-development",name:"Software development",description:"Inspect, implement, test, and report software changes.",instructions:"Follow repository guidance and return evidence-backed results.",tags:["code","test","review"],status:"active",createdAt:timestamp,updatedAt:timestamp},"software-development");
+            for(const capability of DEFAULT_CAPABILITIES)if(!(await this.capabilities.exists(capability.id)))await this.capabilities.insert({...capability,createdAt:timestamp,updatedAt:timestamp},capability.id);
+            if(!(await this.organizations.exists("local")))await this.organizations.insert({id:"local",name:"Local workspace",topology:this.topology.mode==="local"?"solo":"managed",createdAt:timestamp,updatedAt:timestamp},"local");
+            if(!(await this.memberships.exists("local-owner")))await this.memberships.insert({id:"local-owner",organizationId:"local",participantId:LOCAL_PARTICIPANT_ID,role:"owner",createdAt:timestamp,updatedAt:timestamp},"local-owner");
+            for(const conversation of await this.conversations.all())if(!conversation.intelligenceId)await this.conversations.update(conversation.id,{intelligenceId:conversation.agentId});
+            for(const run of await this.runs.all())if(!run.intelligenceId)await this.runs.update(run.id,{intelligenceId:run.agentId,skillIds:[],capabilityIds:[],heartbeatAt:run.completedAt||run.startedAt});
+            await this.metadata.update("database",{schemaVersion:14,updatedAt:timestamp});
+        }
+        const dailyDriverMetadata=await this.metadata.get("database");
+        if((dailyDriverMetadata?.schemaVersion||1)<15){
+            const executionPolicy={filesystem:"workspace-write" as const,shell:true,network:true};
+            for(const profile of await this.intelligence.all())if(!profile.runtime&&profile.executionPolicy.shell&&!profile.executionPolicy.network)await this.intelligence.update(profile.id,{executionPolicy,updatedAt:timestamp});
+            for(const profile of await this.agents.all())if(!profile.runtime&&profile.executionPolicy.shell&&!profile.executionPolicy.network)await this.agents.update(profile.id,{executionPolicy,updatedAt:timestamp});
+            await this.metadata.update("database",{schemaVersion:15,updatedAt:timestamp});
+        }
+        const compatibleProfilesMetadata=await this.metadata.get("database");
+        if((compatibleProfilesMetadata?.schemaVersion||1)<16){
+            const executionPolicy={filesystem:"workspace-write" as const,shell:true,network:true};
+            for(const profile of await this.intelligence.all())if(!profile.runtime&&profile.executionPolicy.shell&&!profile.executionPolicy.network)await this.intelligence.update(profile.id,{executionPolicy,updatedAt:timestamp});
+            for(const profile of await this.agents.all())if(!profile.runtime&&profile.executionPolicy.shell&&!profile.executionPolicy.network)await this.agents.update(profile.id,{executionPolicy,updatedAt:timestamp});
+            await this.metadata.update("database",{schemaVersion:16,updatedAt:timestamp});
+        }
         const integrity=await this.reconcileCanonicalGraph();
         await this.metadata.update("database",{integrityRepairs:integrity.repairs,integrityIssues:integrity.issues,integrityCheckedAt:Date.now(),updatedAt:Date.now()});
     }
@@ -465,7 +532,7 @@ export class ControlDatabase {
     }
     async exportSnapshot(): Promise<ControlBackup> {
         const collections: Record<string, unknown[]> = {
-            projects: await this.projects.all(), works: await this.works.all(), agents: await this.agents.all(), participants: await this.participants.all(), tasks: await this.tasks.all(), conversations: await this.conversations.all(), messages: await this.messages.all(), decisions: await this.decisions.all(), inboxItems: await this.inboxItems.all(), runs: await this.runs.all(), runEvents: await this.runEvents.all(), changeSets:await this.changeSets.all(),testResults:await this.testResults.all(), activity: await this.activity.all(), evidence: await this.evidence.all(), outcomes: await this.outcomes.all(), investigations: await this.investigations.all(), terminals: await this.terminals.all(), metadata: await this.metadata.all(), settings: await this.settings.all(), drafts: await this.drafts.all(),
+            projects: await this.projects.all(), works: await this.works.all(), agents: await this.agents.all(), intelligence:await this.intelligence.all(), skills:await this.skills.all(), capabilities:await this.capabilities.all(), organizations:await this.organizations.all(), memberships:await this.memberships.all(), claims:await this.claims.all(), repositories:await this.repositories.all(), operationalCommands:await this.operationalCommands.all(), documentation:await this.documentation.all(), participants: await this.participants.all(), tasks: await this.tasks.all(), conversations: await this.conversations.all(), messages: await this.messages.all(), decisions: await this.decisions.all(), inboxItems: await this.inboxItems.all(), runs: await this.runs.all(), runEvents: await this.runEvents.all(), changeSets:await this.changeSets.all(),testResults:await this.testResults.all(), activity: await this.activity.all(), evidence: await this.evidence.all(), outcomes: await this.outcomes.all(), investigations: await this.investigations.all(), terminals: await this.terminals.all(), metadata: await this.metadata.all(), settings: await this.settings.all(), drafts: await this.drafts.all(),
         };
         return { format: "control-feltdb-snapshot", version: 2, exportedAt: new Date().toISOString(), topology: this.topology.mode, collections };
     }
@@ -485,16 +552,16 @@ export class ControlDatabase {
                 applied++;
             }
         };
-        await merge(this.projects, backup.collections.projects); await merge(this.works, backup.collections.works); await merge(this.agents, backup.collections.agents); await merge(this.participants, backup.collections.participants); await merge(this.tasks, backup.collections.tasks); await merge(this.conversations, backup.collections.conversations); await merge(this.messages, backup.collections.messages); await merge(this.decisions, backup.collections.decisions); await merge(this.inboxItems, backup.collections.inboxItems); await merge(this.runs, backup.collections.runs); await merge(this.runEvents, backup.collections.runEvents); await merge(this.changeSets,backup.collections.changeSets);await merge(this.testResults,backup.collections.testResults); await merge(this.activity, backup.collections.activity); await merge(this.evidence, backup.collections.evidence); await merge(this.outcomes, backup.collections.outcomes); await merge(this.investigations, backup.collections.investigations); await merge(this.terminals, backup.collections.terminals); await merge(this.metadata, backup.collections.metadata); await merge(this.settings, backup.collections.settings); await merge(this.drafts, backup.collections.drafts);
+        await merge(this.projects, backup.collections.projects); await merge(this.works, backup.collections.works); await merge(this.agents, backup.collections.agents); await merge(this.intelligence,backup.collections.intelligence); await merge(this.skills,backup.collections.skills); await merge(this.capabilities,backup.collections.capabilities); await merge(this.organizations,backup.collections.organizations); await merge(this.memberships,backup.collections.memberships); await merge(this.claims,backup.collections.claims); await merge(this.repositories,backup.collections.repositories); await merge(this.operationalCommands,backup.collections.operationalCommands); await merge(this.documentation,backup.collections.documentation); await merge(this.participants, backup.collections.participants); await merge(this.tasks, backup.collections.tasks); await merge(this.conversations, backup.collections.conversations); await merge(this.messages, backup.collections.messages); await merge(this.decisions, backup.collections.decisions); await merge(this.inboxItems, backup.collections.inboxItems); await merge(this.runs, backup.collections.runs); await merge(this.runEvents, backup.collections.runEvents); await merge(this.changeSets,backup.collections.changeSets);await merge(this.testResults,backup.collections.testResults); await merge(this.activity, backup.collections.activity); await merge(this.evidence, backup.collections.evidence); await merge(this.outcomes, backup.collections.outcomes); await merge(this.investigations, backup.collections.investigations); await merge(this.terminals, backup.collections.terminals); await merge(this.metadata, backup.collections.metadata); await merge(this.settings, backup.collections.settings); await merge(this.drafts, backup.collections.drafts);
         return { applied };
     }
     async removeProjectGraph(projectId:string):Promise<{deleted:number}>{
-        const activeRuns=(await this.runs.find({projectId})).filter(run=>run.status==="starting"||run.status==="running");
-        if(activeRuns.length)throw new Error("Stop active agent runs before removing this project");
+        const activeRuns=(await this.runs.find({projectId})).filter(run=>run.status==="queued"||run.status==="starting"||run.status==="running");
+        if(activeRuns.length)throw new Error("Stop active Intelligence Runs before removing this project");
         let deleted=0;
         for(const terminal of await this.terminals.find({projectId})){await invoke("cmd_terminal_session_close",{sessionId:terminal.id});await this.terminals.delete(terminal.id);deleted++;}
         for(const conversation of await this.conversations.find({projectId})){for(const message of await this.messages.find({conversationId:conversation.id})){await this.messages.delete(message.id);deleted++;}await this.conversations.delete(conversation.id);deleted++;}
-        const collections=[this.tasks,this.investigations,this.decisions,this.inboxItems,this.runs,this.runEvents,this.changeSets,this.testResults,this.evidence,this.outcomes,this.works,this.activity,this.drafts] as Array<Collection<{id:string;projectId:string}>>;
+        const collections=[this.tasks,this.investigations,this.decisions,this.inboxItems,this.runs,this.runEvents,this.changeSets,this.testResults,this.evidence,this.outcomes,this.claims,this.repositories,this.operationalCommands,this.documentation,this.works,this.activity,this.drafts] as Array<Collection<{id:string;projectId:string}>>;
         for(const collection of collections)for(const record of await collection.find({projectId})){await collection.delete(record.id);deleted++;}
         await this.projects.delete(projectId);deleted++;
         const residue=(await Promise.all(collections.map(collection=>collection.find({projectId})))).reduce((count,records)=>count+records.length,0)+(await this.conversations.find({projectId})).length+(await this.terminals.find({projectId})).length;
@@ -573,6 +640,12 @@ const DEFAULT_AGENTS: Array<Omit<ControlAgent, "createdAt" | "updatedAt">> = [
     { id: "researcher", name: "Researcher", description: "Investigates technical and product questions.", instructions: "Research thoroughly, verify claims with primary sources, and return actionable findings.", capabilities: ["research", "analysis"],timeoutMinutes:60, executionPolicy: { filesystem: "read-only", shell: false, network: true }, status: "active" },
     { id: "tester", name: "Tester", description: "Finds regressions and verifies behavior.", instructions: "Test behavior and edge cases, reproduce failures, and report evidence with exact steps.", capabilities: ["testing", "qa", "review"],timeoutMinutes:60, executionPolicy: { filesystem: "workspace-write", shell: true, network: false }, status: "active" },
     { id: "planner", name: "Planner", description: "Triages work and resolves dependencies.", instructions: "Turn goals into ordered tasks with owners, dependencies, acceptance criteria, and risks.", capabilities: ["triage", "planning", "prioritization"],timeoutMinutes:60, executionPolicy: { filesystem: "read-only", shell: false, network: false }, status: "active" },
+];
+const DEFAULT_CAPABILITIES:Array<Omit<ControlCapability,"createdAt"|"updatedAt">>=[
+    {id:"filesystem-read",name:"Read workspace",description:"Read files inside the selected project.",risk:"low",approval:"never",enabled:true},
+    {id:"filesystem-write",name:"Change workspace",description:"Create and modify files inside the selected project.",risk:"medium",approval:"high-risk",enabled:true},
+    {id:"shell",name:"Run commands",description:"Execute supervised commands in the project.",risk:"medium",approval:"high-risk",enabled:true},
+    {id:"network",name:"Use network",description:"Access external network resources.",risk:"high",approval:"always",enabled:false},
 ];
 let controlDatabase: ControlDatabase | undefined;
 let controlTopology: ControlDataTopology | undefined;

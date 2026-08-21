@@ -5,10 +5,10 @@ import { Project, ExplorerNode, GitStatus, Workspace } from "../types";
 import FileExplorer from "./FileExplorer";
 import GitPanel from "./GitPanel";
 import SearchPanel from "./SearchPanel";
-import TasksPanel from "./TasksPanel";
+import OperationalContext from "./OperationalContext";
 import "./Sidebar.css";
 
-type SidebarTab = "explorer" | "git" | "search" | "tasks";
+type SidebarTab = "explorer" | "git" | "search" | "operations";
 
 interface SidebarProps {
   explorerTree: ExplorerNode[];
@@ -21,6 +21,7 @@ interface SidebarProps {
   onExplorerRefresh: () => void;
   showGeneratedFiles:boolean;
   onShowGeneratedFilesChange:(value:boolean)=>void;
+  dirtyPaths:string[];
 }
 
 export default function Sidebar({
@@ -34,9 +35,10 @@ export default function Sidebar({
   onExplorerRefresh,
   showGeneratedFiles,
   onShowGeneratedFilesChange,
+  dirtyPaths,
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>("explorer");
-  React.useEffect(()=>{const handler=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="search-workspace")setActiveTab("search");else if(command==="start-agent")setActiveTab("tasks");else if(command==="commit-changes")setActiveTab("git");else if(command==="open-file")setActiveTab("explorer");};window.addEventListener("control-command",handler);return()=>window.removeEventListener("control-command",handler);},[]);
+  React.useEffect(()=>{const handler=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="search-workspace")setActiveTab("search");else if(command==="commit-changes")setActiveTab("git");else if(command==="open-file")setActiveTab("explorer");};window.addEventListener("control-command",handler);return()=>window.removeEventListener("control-command",handler);},[]);
 
   const renderTabContent = useCallback(() => {
     switch (activeTab) {
@@ -53,7 +55,7 @@ export default function Sidebar({
           />
         );
       case "git":
-        return <GitPanel gitStatus={gitStatus} workspacePath={currentWorkspace?.path} onRefresh={onGitRefresh} />;
+        return <GitPanel gitStatus={gitStatus} workspacePath={currentWorkspace?.path} onRefresh={onGitRefresh} dirtyPaths={dirtyPaths} />;
       case "search":
         return (
           <SearchPanel
@@ -62,44 +64,39 @@ export default function Sidebar({
             includeGenerated={showGeneratedFiles}
           />
         );
-      case "tasks":
-        return <TasksPanel projectId={currentProject?.id} projectPath={currentProject?.path} />;
+      case "operations":
+        return <OperationalContext projectId={currentProject.id} onOpen={onFileClick}/>;
       default:
         return null;
     }
-  }, [activeTab, currentProject?.id, currentWorkspace?.path, explorerTree, gitStatus, onFileClick, onGitRefresh, onExplorerRefresh,showGeneratedFiles,onShowGeneratedFilesChange]);
+  }, [activeTab, currentProject?.id, currentWorkspace?.path, explorerTree, gitStatus, onFileClick, onGitRefresh, onExplorerRefresh,showGeneratedFiles,onShowGeneratedFilesChange,dirtyPaths]);
 
   return (
     <div className="sidebar-container">
-      <div className="sidebar-tabs">
+      <div className="sidebar-tabs"><div className="nav-scope project-only"><span>Project</span>
         <button
           className={`tab-button ${activeTab === "explorer" ? "active" : ""}`}
           title="File Explorer"
           onClick={() => setActiveTab("explorer")}
         >
-          📁
+          Files
         </button>
         <button
           className={`tab-button ${activeTab === "git" ? "active" : ""}`}
           title="Git Changes"
           onClick={() => setActiveTab("git")}
         >
-          🌿
+          Git
         </button>
         <button
           className={`tab-button ${activeTab === "search" ? "active" : ""}`}
           title="Search"
           onClick={() => setActiveTab("search")}
         >
-          🔍
+          Search
         </button>
-        <button
-          className={`tab-button ${activeTab === "tasks" ? "active" : ""}`}
-          title="Tasks"
-          onClick={() => setActiveTab("tasks")}
-        >
-          ✓
-        </button>
+        <button className={`tab-button ${activeTab === "operations" ? "active" : ""}`} title="Operational Context" onClick={() => setActiveTab("operations")}>Ops</button>
+        </div>
       </div>
 
       {renderTabContent()}

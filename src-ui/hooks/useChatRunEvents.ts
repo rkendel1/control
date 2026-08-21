@@ -18,7 +18,7 @@ export function useChatRunEvents():void{
         if(payload.eventType==="output"){
           const content=safe(payload.output);if(!content)return;
           const id=createId("run_event");await db.runEvents.insert({id,runId:run.id,projectId:run.projectId,workId:run.workId,taskId:run.taskId,type:"output",content,createdAt:Date.now()},id);
-          const current=await db.runs.get(run.id);await db.runs.update(run.id,{summary:[current?.summary,content].filter(Boolean).join("").slice(-100000)});return;
+          const current=await db.runs.get(run.id);await db.runs.update(run.id,{summary:[current?.summary,content].filter(Boolean).join("").slice(-100000),heartbeatAt:Date.now()});return;
         }
         if(run.status==="stopped")return;
         const now=Date.now(),content=safe(payload.output),error=safe(payload.error);

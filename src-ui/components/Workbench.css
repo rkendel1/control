@@ -3,8 +3,8 @@
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background: #1e1e1e;
-  color: #e0e0e0;
+  background: radial-gradient(circle at 55% 0%,#101c2a 0,#070b11 46%,#05080d 100%);
+  color: #dce6f2;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
     Ubuntu, Cantarell, sans-serif;
 }
@@ -34,10 +34,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 50px;
-  background: #252526;
-  border-bottom: 1px solid #3e3e42;
-  padding: 0 16px;
+  height: 56px;
+  background: rgba(8,13,21,.96);
+  border-bottom: 1px solid #1e3146;
+  padding: 0 18px;
   flex-shrink: 0;
 }
 
@@ -49,13 +49,14 @@
 
 .logo {
   font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.5px;
+  font-size: 16px;
+  letter-spacing: 0.7px;
+  color:#f2f7ff;
 }
 
 .project-selector {
-  background: #3c3c3c;
-  border: 1px solid #464646;
+  background: #111a26;
+  border: 1px solid #2b4058;
   color: #e0e0e0;
   padding: 6px 12px;
   border-radius: 4px;
@@ -86,6 +87,8 @@
 .header-action:hover {
   background: #1177bb;
 }
+.header-global{background:transparent;border:1px solid #484848;color:#bbb;padding:6px 9px;border-radius:4px;cursor:pointer;font-size:11px}.header-global:hover{color:#fff;border-color:#777;background:#303030}
+.inbox-indicator{position:relative}.inbox-indicator.new{border-color:#2477b3;color:#8dccff}.inbox-indicator.attention{border-color:#a27b24;color:#ffd36b}.inbox-indicator.urgent{border-color:#a74747;color:#ff9a9a}.inbox-new-dot{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:#3aa8ff;box-shadow:0 0 0 2px #252526}.attention .inbox-new-dot{background:#ffc54d}.urgent .inbox-new-dot{background:#ff5d5d}
 
 .git-info {
   font-size: 12px;
@@ -100,11 +103,16 @@
   flex: 1;
   overflow: hidden;
   min-height: 0;
+  margin:10px 10px 0;
+  border:1px solid #23364b;
+  border-bottom:0;
+  border-radius:8px 8px 0 0;
+  box-shadow:0 0 28px rgba(0,117,190,.08);
 }
 
 .sidebar {
-  background: #252526;
-  border-right: 1px solid #3e3e42;
+  background: #0d141e;
+  border-right: 1px solid #25384c;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -157,6 +165,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background:#090e15;
 }
 
 .agent-panel-container {
@@ -169,8 +178,11 @@
 }
 
 .terminal-container {
-  background: #1e1e1e;
-  border-top: 1px solid #3e3e42;
+  background: #080d13;
+  border: 1px solid #23364b;
+  border-top-color:#2d668e;
+  margin:0 10px 10px;
+  border-radius:0 0 8px 8px;
   overflow: hidden;
   display: flex;
   flex-direction: column;

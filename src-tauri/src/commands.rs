@@ -143,6 +143,22 @@ fn token_entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(CONTROL_KEYRING_SERVICE, CONTROL_KEYRING_ACCOUNT)
         .map_err(|error| format!("OS credential store is unavailable: {error}"))
 }
+const PROVIDER_CREDENTIALS:[(&str,&str);4]=[("openai","OPENAI_API_KEY"),("anthropic","ANTHROPIC_API_KEY"),("openrouter","OPENROUTER_API_KEY"),("gemini","GEMINI_API_KEY")];
+fn provider_credential(provider:&str)->Option<(&'static str,&'static str)>{PROVIDER_CREDENTIALS.iter().copied().find(|(id,_)|*id==provider)}
+fn provider_entry(provider:&str)->Result<keyring::Entry,String>{if provider_credential(provider).is_none(){return Err("Unsupported provider credential".into());}keyring::Entry::new(CONTROL_KEYRING_SERVICE,&format!("provider:{provider}")).map_err(|error|format!("OS credential store is unavailable: {error}"))}
+
+#[derive(Debug,Serialize,Clone)]
+#[serde(rename_all="camelCase")]
+pub struct ProviderCredentialStatusDTO{provider:String,environment_variable:String,configured:bool}
+
+#[tauri::command]
+pub fn cmd_provider_credentials_list()->Result<CommandResponse<Vec<ProviderCredentialStatusDTO>>,String>{Ok(CommandResponse::ok(PROVIDER_CREDENTIALS.iter().map(|(provider,environment)|ProviderCredentialStatusDTO{provider:(*provider).into(),environment_variable:(*environment).into(),configured:provider_entry(provider).and_then(|entry|entry.get_password().map_err(|error|error.to_string())).map(|value|!value.trim().is_empty()).unwrap_or(false)}).collect()))}
+
+#[tauri::command]
+pub fn cmd_provider_credential_set(provider:String,credential:String)->Result<CommandResponse<bool>,String>{if credential.trim().is_empty(){return Ok(CommandResponse::err("Credential cannot be empty".into()));}match provider_entry(&provider).and_then(|entry|entry.set_password(credential.trim()).map_err(|error|format!("Unable to save provider credential: {error}"))){Ok(())=>Ok(CommandResponse::ok(true)),Err(error)=>Ok(CommandResponse::err(error))}}
+
+#[tauri::command]
+pub fn cmd_provider_credential_delete(provider:String)->Result<CommandResponse<bool>,String>{match provider_entry(&provider).and_then(|entry|match entry.delete_credential(){Ok(())|Err(keyring::Error::NoEntry)=>Ok(()),Err(error)=>Err(format!("Unable to remove provider credential: {error}"))}){Ok(())=>Ok(CommandResponse::ok(true)),Err(error)=>Ok(CommandResponse::err(error))}}
 fn read_topology(app: &AppHandle) -> Result<StoredDataTopology, String> {
     let path = topology_path(app)?;
     if !path.exists() {
@@ -448,7 +464,7 @@ fn runtime_supports_policy(runtime: &str, filesystem: &str, shell: bool, network
         "claude" | "claude-code" => !shell || (filesystem == "workspace-write" && network),
         "codex" => shell && !network && matches!(filesystem, "read-only" | "workspace-write"),
         "opencode" => filesystem == "workspace-write" && shell && network,
-        "ollama" => filesystem == "read-only" && !shell && !network,
+        "ollama" => !shell || (filesystem == "workspace-write" && network),
         _ => false,
     }
 }
@@ -573,7 +589,12 @@ pub async fn cmd_agent_run_start(
         execution_shell,
         execution_network,
     );
-    let (runtime, mut command) = if matches!(preferred, "auto" | "claude" | "claude-code")
+    let local_coding_available = ollama_supports_policy && runtime_available("ollama");
+    let wants_frontier = preferred == "frontier";
+    let wants_local = preferred == "local";
+    let (runtime, mut command) = if (matches!(preferred, "auto" | "claude" | "claude-code")
+        || wants_frontier)
+        && (preferred != "auto" || !local_coding_available)
         && claude_supports_policy
         && runtime_available("claude-code")
     {
@@ -596,7 +617,8 @@ pub async fn cmd_agent_run_start(
             .arg("--allowedTools")
             .args(tools);
         ("claude-code".to_string(), command)
-    } else if matches!(preferred, "auto" | "codex")
+    } else if (matches!(preferred, "auto" | "codex") || wants_frontier)
+        && (preferred != "auto" || !local_coding_available)
         && codex_supports_policy
         && runtime_available("codex")
     {
@@ -612,7 +634,8 @@ pub async fn cmd_agent_run_start(
             ])
             .arg(&prompt);
         ("codex".to_string(), command)
-    } else if matches!(preferred, "auto" | "opencode")
+    } else if (matches!(preferred, "auto" | "opencode") || wants_frontier)
+        && (preferred != "auto" || !local_coding_available)
         && opencode_supports_policy
         && runtime_available("opencode")
     {
@@ -620,19 +643,18 @@ pub async fn cmd_agent_run_start(
         let mut command = tokio::process::Command::new(binary);
         command.arg("run").arg(&prompt);
         ("opencode".to_string(), command)
-    } else if (preferred == "auto" || preferred == "ollama" || preferred.starts_with("ollama:"))
+    } else if (preferred == "auto" || wants_local || preferred == "ollama" || preferred.starts_with("ollama:"))
         && ollama_supports_policy
         && runtime_available("ollama")
     {
         let binary = which::which("ollama").expect("runtime checked");
         let model = ollama_model(preferred).expect("runtime checked");
         let mut command = tokio::process::Command::new(binary);
-        command
-            .arg("run")
-            .arg(&model)
-            .args(["--hidethinking", "--nowordwrap"])
-            .arg(&prompt);
-        (format!("ollama:{model}"), command)
+        let mut tools=vec!["Read","Glob","Grep"];
+        if execution_filesystem=="workspace-write"{tools.extend(["Edit","Write"]);}
+        if execution_shell{tools.push("Bash");}
+        command.args(["launch","claude","--model",&model,"--yes","--","-p",&prompt,"--no-session-persistence","--output-format","stream-json","--verbose","--allowedTools"]).args(tools);
+        (format!("ollama-claude:{model}"), command)
     } else {
         return Ok(CommandResponse::err(format!("No available runtime can enforce filesystem={}, shell={}, network={} for configured runtime '{}'", execution_filesystem, execution_shell, execution_network, preferred)));
     };
@@ -644,6 +666,8 @@ pub async fn cmd_agent_run_start(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+    if runtime=="claude-code"{if let Ok(value)=provider_entry("anthropic").and_then(|entry|entry.get_password().map_err(|error|error.to_string())){command.env("ANTHROPIC_API_KEY",value);}}
+    if runtime=="codex"{if let Ok(value)=provider_entry("openai").and_then(|entry|entry.get_password().map_err(|error|error.to_string())){command.env("OPENAI_API_KEY",value);}}
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
@@ -749,7 +773,7 @@ pub async fn cmd_agent_run_start(
             None => NativeRunEvent {
                 run_id: event_run_id,
                 event_type: "failed".to_string(),
-                output: (!stdout.is_empty()).then_some(stdout),
+                output: (!stdout.is_empty()).then_some(stdout.clone()),
                 error: Some(wait_error.unwrap_or_else(|| {
                     if stderr.is_empty() {
                         "Agent process failed".into()
@@ -770,7 +794,7 @@ pub async fn cmd_agent_run_start(
 }
 
 fn normalize_agent_output(runtime: &str, output: &str) -> String {
-    if runtime != "claude-code" {
+    if runtime != "claude-code" && !runtime.starts_with("ollama-claude:") {
         return output.to_string();
     }
     let mut fallback = String::new();
@@ -1334,7 +1358,22 @@ pub async fn cmd_agent_chat(
         content
     );
     let preferred = preferred_runtime.as_deref().unwrap_or("auto");
-    let (runtime, mut command) = if matches!(preferred, "auto" | "claude" | "claude-code")
+    let (runtime, mut command) = if (preferred == "ollama"
+        || preferred.starts_with("ollama:")
+        || preferred == "local"
+        || (preferred == "auto" && runtime_available("ollama")))
+        && runtime_available("ollama")
+    {
+        let binary = which::which("ollama").expect("runtime checked");
+        let model = ollama_model(preferred).expect("runtime checked");
+        let mut command = tokio::process::Command::new(binary);
+        command
+            .arg("run")
+            .arg(&model)
+            .args(["--hidethinking", "--nowordwrap"])
+            .arg(&prompt);
+        (format!("ollama:{model}"), command)
+    } else if matches!(preferred, "auto" | "frontier" | "claude" | "claude-code")
         && runtime_available("claude-code")
     {
         let binary = which::which("claude").expect("runtime checked");
@@ -1348,7 +1387,7 @@ pub async fn cmd_agent_chat(
             .arg("--allowedTools")
             .args(["Read", "Glob", "Grep"]);
         ("claude-code".to_string(), command)
-    } else if matches!(preferred, "auto" | "codex") && runtime_available("codex") {
+    } else if matches!(preferred, "auto" | "frontier" | "codex") && runtime_available("codex") {
         let binary = which::which("codex").expect("runtime checked");
         let mut command = tokio::process::Command::new(binary);
         command
@@ -1356,18 +1395,6 @@ pub async fn cmd_agent_chat(
             .args(["--sandbox", "read-only", "--ephemeral"])
             .arg(&prompt);
         ("codex".to_string(), command)
-    } else if (preferred == "auto" || preferred == "ollama" || preferred.starts_with("ollama:"))
-        && runtime_available("ollama")
-    {
-        let binary = which::which("ollama").expect("runtime checked");
-        let model = ollama_model(preferred).expect("runtime checked");
-        let mut command = tokio::process::Command::new(binary);
-        command
-            .arg("run")
-            .arg(&model)
-            .args(["--hidethinking", "--nowordwrap"])
-            .arg(&prompt);
-        (format!("ollama:{model}"), command)
     } else {
         return Ok(CommandResponse::err(format!("Configured conversational runtime '{}' is unavailable or cannot enforce read-only chat",preferred)));
     };
@@ -1481,10 +1508,14 @@ pub async fn cmd_agent_chat(
             Some(status) => NativeRunEvent {
                 run_id: event_run_id,
                 event_type: "failed".into(),
-                output: (!stdout.is_empty()).then_some(stdout),
+                output: (!stdout.is_empty()).then_some(stdout.clone()),
                 error: Some(if stderr.is_empty() {
                     if status.success() {
                         format!("{} returned an empty response", event_runtime)
+                    } else if !stdout.is_empty() {
+                        stdout.clone()
+                    } else if !raw_stdout.trim().is_empty() {
+                        raw_stdout.trim().to_string()
                     } else {
                         format!("{} exited with {}", event_runtime, status)
                     }
@@ -1740,6 +1771,18 @@ pub struct GitFileStatusDTO {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitConflictDTO {
+    pub path: String,
+    pub kind: String,
+    pub explanation: String,
+    pub local_exists: bool,
+    pub incoming_exists: bool,
+    pub local_preview: String,
+    pub incoming_preview: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ExplorerNodeDTO {
     pub id: String,
     pub path: String,
@@ -1857,6 +1900,17 @@ pub fn cmd_git_diff(
         )),
         Err(error) => Ok(CommandResponse::err(error.to_string())),
     }
+}
+
+#[tauri::command]
+pub fn cmd_git_file_content(workspace_path:String,file_path:String,version:String)->Result<CommandResponse<String>,String>{
+    let relative=std::path::Path::new(&file_path);
+    if relative.is_absolute()||relative.components().any(|part|!matches!(part,std::path::Component::Normal(_))){return Ok(CommandResponse::err("Git file path must stay inside the workspace".into()));}
+    let workspace=match std::path::Path::new(&workspace_path).canonicalize(){Ok(path)if path.is_dir()=>path,_=>return Ok(CommandResponse::err("Git workspace is unavailable".into()))};
+    if version=="before"{let spec=format!("HEAD:{}",relative.to_string_lossy());return match std::process::Command::new("git").arg("-C").arg(&workspace).args(["show",&spec]).output(){Ok(output)if output.status.success()=>Ok(CommandResponse::ok(String::from_utf8_lossy(&output.stdout).to_string())),Ok(output)if output.status.code()==Some(128)=>Ok(CommandResponse::ok(String::new())),Ok(output)=>Ok(CommandResponse::err(String::from_utf8_lossy(&output.stderr).trim().to_string())),Err(error)=>Ok(CommandResponse::err(error.to_string()))};}
+    if version!="now"{return Ok(CommandResponse::err("Unsupported Git file version".into()));}
+    let candidate=workspace.join(relative);if !candidate.exists(){return Ok(CommandResponse::ok(String::new()));}let canonical=match candidate.canonicalize(){Ok(path)if path.starts_with(&workspace)=>path,_=>return Ok(CommandResponse::err("Git file path escapes the workspace".into()))};
+    match std::fs::read(&canonical){Ok(bytes)=>Ok(CommandResponse::ok(String::from_utf8_lossy(&bytes).to_string())),Err(error)=>Ok(CommandResponse::err(error.to_string()))}
 }
 
 #[tauri::command]
@@ -1991,6 +2045,86 @@ pub async fn cmd_git_sync(
             "Git {action} timed out after 5 minutes"
         ))),
     }
+}
+
+fn git_conflict_stage(workspace: &std::path::Path, stage: u8, path: &str) -> Option<Vec<u8>> {
+    let spec = format!(":{stage}:{path}");
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(workspace)
+        .args(["show", &spec])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| output.stdout)
+}
+
+#[tauri::command]
+pub fn cmd_git_conflicts(workspace_path: String) -> Result<CommandResponse<Vec<GitConflictDTO>>, String> {
+    let workspace = match std::path::Path::new(&workspace_path).canonicalize() {
+        Ok(path) if path.is_dir() => path,
+        _ => return Ok(CommandResponse::err("Git workspace is unavailable".into())),
+    };
+    let output = match std::process::Command::new("git").arg("-C").arg(&workspace).args(["diff", "--name-only", "--diff-filter=U", "-z"]).output() {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => return Ok(CommandResponse::err(String::from_utf8_lossy(&output.stderr).trim().to_string())),
+        Err(error) => return Ok(CommandResponse::err(error.to_string())),
+    };
+    let conflicts = output.stdout.split(|byte| *byte == 0).filter(|path| !path.is_empty()).map(|raw_path| {
+        let path = String::from_utf8_lossy(raw_path).to_string();
+        let local = git_conflict_stage(&workspace, 2, &path);
+        let incoming = git_conflict_stage(&workspace, 3, &path);
+        let (kind, explanation) = match (local.is_some(), incoming.is_some()) {
+            (true, true) => ("both-modified", "Both your branch and the incoming branch changed this file. Review the competing versions or explicitly choose one."),
+            (true, false) => ("incoming-deleted", "Your branch changed this file, but the incoming branch deleted it. Keep your file or accept the deletion."),
+            (false, true) => ("local-deleted", "Your branch deleted this file, but the incoming branch changed it. Keep the deletion or restore the incoming file."),
+            (false, false) => ("both-deleted", "Both branches deleted this file. It can be resolved automatically."),
+        };
+        let preview = |content: &Option<Vec<u8>>| content.as_ref().map(|bytes| String::from_utf8_lossy(bytes).lines().take(12).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+        GitConflictDTO { path, kind: kind.into(), explanation: explanation.into(), local_exists: local.is_some(), incoming_exists: incoming.is_some(), local_preview: preview(&local), incoming_preview: preview(&incoming) }
+    }).collect();
+    Ok(CommandResponse::ok(conflicts))
+}
+
+#[tauri::command]
+pub fn cmd_git_resolve_conflict(workspace_path: String, file_path: String, resolution: String) -> Result<CommandResponse<bool>, String> {
+    let workspace = match std::path::Path::new(&workspace_path).canonicalize() { Ok(path) if path.is_dir() => path, _ => return Ok(CommandResponse::err("Git workspace is unavailable".into())) };
+    let relative = std::path::Path::new(&file_path);
+    if relative.is_absolute() || relative.components().any(|part| !matches!(part, std::path::Component::Normal(_))) { return Ok(CommandResponse::err("Conflict path must stay inside the workspace".into())); }
+    let stage = match resolution.as_str() { "local" => 2, "incoming" => 3, "resolved" => 0, _ => return Ok(CommandResponse::err("Unsupported conflict resolution".into())) };
+    if stage == 0 {
+        if let Ok(content) = std::fs::read_to_string(workspace.join(relative)) {
+            if content.contains("<<<<<<<") || content.contains("=======") || content.contains(">>>>>>>") {
+                return Ok(CommandResponse::err("Conflict markers remain in this file. Edit every marked section before marking it resolved.".into()));
+            }
+        }
+    }
+    if stage != 0 {
+        let content = git_conflict_stage(&workspace, stage, &file_path);
+        let operation = if let Some(content) = content {
+            std::fs::write(workspace.join(relative), content).map_err(|error| error.to_string()).map(|_| ())
+        } else {
+            match std::fs::remove_file(workspace.join(relative)) { Ok(()) => Ok(()), Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()), Err(error) => Err(error.to_string()) }
+        };
+        if let Err(error) = operation { return Ok(CommandResponse::err(error)); }
+    }
+    let output = std::process::Command::new("git").arg("-C").arg(&workspace).arg("add").arg("--").arg(relative).output();
+    match output { Ok(output) if output.status.success() => Ok(CommandResponse::ok(true)), Ok(output) => Ok(CommandResponse::err(String::from_utf8_lossy(&output.stderr).trim().to_string())), Err(error) => Ok(CommandResponse::err(error.to_string())) }
+}
+
+#[tauri::command]
+pub fn cmd_git_auto_resolve_conflicts(workspace_path: String) -> Result<CommandResponse<u32>, String> {
+    let response = cmd_git_conflicts(workspace_path.clone())?;
+    if !response.success { return Ok(CommandResponse::err(response.error.unwrap_or_else(|| "Could not inspect conflicts".into()))); }
+    let mut resolved = 0;
+    for conflict in response.data.unwrap_or_default() {
+        let identical = conflict.local_exists && conflict.incoming_exists && git_conflict_stage(std::path::Path::new(&workspace_path), 2, &conflict.path) == git_conflict_stage(std::path::Path::new(&workspace_path), 3, &conflict.path);
+        if conflict.kind == "both-deleted" || identical {
+            let resolution = if identical { "local" } else { "resolved" };
+            if cmd_git_resolve_conflict(workspace_path.clone(), conflict.path, resolution.into())?.success { resolved += 1; }
+        }
+    }
+    Ok(CommandResponse::ok(resolved))
 }
 
 #[tauri::command]

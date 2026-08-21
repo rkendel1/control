@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ExplorerNode, GitFileStatus, GitStatus } from "../types";
 import "./FileExplorer.css";
 import { invoke } from "../lib/tauri";
@@ -27,6 +27,8 @@ export default function FileExplorer({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set(["root"])
   );
+  const [contextMenu,setContextMenu]=useState<{node:ExplorerNode;x:number;y:number}>();
+  useEffect(()=>{if(!contextMenu)return;const close=()=>setContextMenu(undefined),key=(event:KeyboardEvent)=>event.key==="Escape"&&close();window.addEventListener("mousedown",close);window.addEventListener("blur",close);window.addEventListener("keydown",key);return()=>{window.removeEventListener("mousedown",close);window.removeEventListener("blur",close);window.removeEventListener("keydown",key);};},[contextMenu]);
 
   const toggleFolder = (id: string) => {
     const newExpanded = new Set(expandedFolders);
@@ -38,8 +40,10 @@ export default function FileExplorer({
     setExpandedFolders(newExpanded);
   };
 
-  const createEntry=async(isDirectory:boolean)=>{if(!workspacePath)return;const path=window.prompt(isDirectory?"New folder path":"New file path")?.trim();if(!path)return;const response=await invoke("cmd_file_create",{workspacePath,filePath:path,isDirectory});if(!response.success)window.alert(response.error);else onRefresh();};
-  const manageEntry=async(node:ExplorerNode)=>{if(!workspacePath)return;const action=window.prompt(`Action for ${node.path}: rename or delete`,"rename")?.trim().toLowerCase();if(action==="rename"){const next=window.prompt("New relative path",node.path)?.trim();if(!next||next===node.path)return;const response=await invoke("cmd_file_rename",{workspacePath,filePath:node.path,newPath:next});if(!response.success)window.alert(response.error);else onRefresh();}else if(action==="delete"&&window.confirm(`Delete ${node.path}? This cannot be undone.`)){const response=await invoke("cmd_file_delete",{workspacePath,filePath:node.path});if(!response.success)window.alert(response.error);else onRefresh();}};
+  const createEntry=async(isDirectory:boolean,parentPath="")=>{if(!workspacePath)return;const name=window.prompt(isDirectory?"New folder name or path":"New file name or path")?.trim();if(!name)return;const path=parentPath&&!name.includes("/")?`${parentPath}/${name}`:name;const response=await invoke("cmd_file_create",{workspacePath,filePath:path,isDirectory});if(!response.success)window.alert(response.error);else onRefresh();};
+  const renameEntry=async(node:ExplorerNode)=>{if(!workspacePath)return;const parent=node.path.includes("/")?node.path.slice(0,node.path.lastIndexOf("/")+1):"",name=window.prompt("New name",node.name)?.trim();if(!name)return;const next=name.includes("/")?name:`${parent}${name}`;if(next===node.path)return;const response=await invoke("cmd_file_rename",{workspacePath,filePath:node.path,newPath:next});if(!response.success)window.alert(response.error);else onRefresh();};
+  const deleteEntry=async(node:ExplorerNode)=>{if(!workspacePath||!window.confirm(`Delete ${node.path}? This cannot be undone.`))return;const response=await invoke("cmd_file_delete",{workspacePath,filePath:node.path});if(!response.success)window.alert(response.error);else onRefresh();};
+  const showContextMenu=(event:React.MouseEvent,node:ExplorerNode)=>{event.preventDefault();event.stopPropagation();setContextMenu({node,x:Math.min(event.clientX,window.innerWidth-210),y:Math.min(event.clientY,window.innerHeight-250)});};
 
   const getGitStatusIcon = (
     status?: GitFileStatus
@@ -101,7 +105,7 @@ export default function FileExplorer({
           <div
             className="explorer-folder"
             style={{ paddingLeft: `${depth * 12}px` }}
-            onContextMenu={(event)=>{event.preventDefault();void manageEntry(node);}}
+            onContextMenu={(event)=>showContextMenu(event,node)}
           >
             <button
               className="expand-button"
@@ -127,7 +131,7 @@ export default function FileExplorer({
           className={`explorer-file ${statusClass || ""}`}
           style={{ paddingLeft: `${(depth + 1) * 12}px` }}
           onClick={() => onFileClick(node.path)}
-          onContextMenu={(event)=>{event.preventDefault();void manageEntry(node);}}
+          onContextMenu={(event)=>showContextMenu(event,node)}
         >
           <span className="file-icon">{getLanguageIcon(node.path)}</span>
           <span className="file-name">{node.name}</span>
@@ -145,6 +149,14 @@ export default function FileExplorer({
       ) : (
         <div className="explorer-tree">{tree.map((node) => renderNode(node))}</div>
       )}
+      {contextMenu&&<div className="explorer-context-menu" style={{left:contextMenu.x,top:contextMenu.y}} onMouseDown={event=>event.stopPropagation()}>
+        {contextMenu.node.type==="file"&&<button onClick={()=>{onFileClick(contextMenu.node.path);setContextMenu(undefined);}}>Open</button>}
+        {contextMenu.node.type==="folder"&&<><button onClick={()=>{toggleFolder(contextMenu.node.id);setContextMenu(undefined);}}>{expandedFolders.has(contextMenu.node.id)?"Collapse":"Expand"}</button><button onClick={()=>{void createEntry(false,contextMenu.node.path);setContextMenu(undefined);}}>New File</button><button onClick={()=>{void createEntry(true,contextMenu.node.path);setContextMenu(undefined);}}>New Folder</button><div className="context-separator"/></>}
+        <button onClick={()=>{void navigator.clipboard.writeText(contextMenu.node.path);setContextMenu(undefined);}}>Copy Relative Path</button>
+        <button onClick={()=>{void renameEntry(contextMenu.node);setContextMenu(undefined);}}>Rename…</button>
+        <div className="context-separator"/>
+        <button className="danger" onClick={()=>{void deleteEntry(contextMenu.node);setContextMenu(undefined);}}>Delete…</button>
+      </div>}
     </div>
   );
 }

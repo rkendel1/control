@@ -108,6 +108,17 @@
   gap: 4px;
 }
 
+.git-notice {
+  padding: 8px 10px;
+  color: #9bd3a7;
+  background: rgba(46, 125, 70, 0.16);
+  border-bottom: 1px solid rgba(90, 170, 110, 0.3);
+  font-size: 12px;
+}
+
+.git-working-summary{display:flex;flex-direction:column;gap:3px;padding:8px;margin-bottom:8px;border-left:3px solid #3c91c9;background:#23313a;color:#c9e8fa;font-size:11px}.git-working-summary span{color:#9eb5c2}.git-working-summary.unsaved{border-left-color:#d3a43c;background:#373123;color:#ffe19a}.git-working-summary.unsaved span{color:#cbbd94}
+.git-conflicts{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}.conflict-heading,.conflict-card{padding:9px;border:1px solid #704242;background:#342526}.conflict-heading{display:flex;flex-direction:column;gap:6px;color:#ffc0ba}.conflict-heading span,.conflict-card p{color:#cda8a4;font-size:11px}.conflict-heading button{align-self:flex-start}.conflict-card details{margin:5px 0;color:#ddd}.conflict-card pre{max-height:150px;overflow:auto;padding:6px;background:#191919;color:#ccc;font-size:10px;white-space:pre-wrap}.conflict-card .decision-options{flex-wrap:wrap;margin-top:8px}
+
 .empty {
   padding: 16px;
   text-align: center;

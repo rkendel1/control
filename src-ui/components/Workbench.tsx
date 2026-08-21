@@ -5,14 +5,15 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspace } from "../hooks/useWorkspace";
 import Sidebar from "./Sidebar";
 import EditorArea from "./EditorArea";
-import CoordinationPanel from "./CoordinationPanel";
 import Terminal from "./Terminal";
 import "./Workbench.css";
 import { useRunEvents } from "../hooks/useRunEvents";
 import { useRunRecovery } from "../hooks/useRunRecovery";
 import { useChatRunEvents } from "../hooks/useChatRunEvents";
-import { getControlDatabase } from "../lib/control-db";
+import { getControlDatabase,LOCAL_PARTICIPANT_ID,type ControlInboxItem } from "../lib/control-db";
 import QuickOpen from "./QuickOpen";
+import { refreshOperationalMemory } from "../lib/operational-memory";
+import ControlPanel from "./ControlPanel";
 
 export default function Workbench() {
   useRunEvents();
@@ -41,17 +42,21 @@ export default function Workbench() {
     loadExplorerTree,
   } = useWorkspace();
 
-  const [sidebarWidth, setSidebarWidth] = useState(250);
-  const [agentPanelWidth, setAgentPanelWidth] = useState(280);
-  const [terminalHeight, setTerminalHeight] = useState(200);
+  const [sidebarWidth, setSidebarWidth] = useState(340);
+  const [agentPanelWidth, setAgentPanelWidth] = useState(350);
+  const [terminalHeight, setTerminalHeight] = useState(220);
   const [layoutLoaded,setLayoutLoaded]=useState(false);
   const [quickOpen,setQuickOpen]=useState(false);
+  const [globalInboxItems,setGlobalInboxItems]=useState<ControlInboxItem[]>([]);
   const [isResizing, setIsResizing] = useState<
     "sidebar" | "agent" | "terminal" | null
   >(null);
 
-  useEffect(()=>{void getControlDatabase().settings.get("workspace").then(settings=>{if(settings){setSidebarWidth(settings.layout.sidebarWidth);setAgentPanelWidth(settings.layout.agentPanelWidth);setTerminalHeight(settings.layout.terminalHeight);}setLayoutLoaded(true);});},[]);
+  useEffect(()=>{void getControlDatabase().settings.get("workspace").then(settings=>{if(settings){setSidebarWidth(Math.max(300,settings.layout.sidebarWidth));setAgentPanelWidth(Math.max(300,settings.layout.agentPanelWidth));setTerminalHeight(Math.max(180,Math.min(360,settings.layout.terminalHeight)));}setLayoutLoaded(true);});},[]);
   useEffect(()=>{if(!layoutLoaded)return;const timer=window.setTimeout(()=>{const database=getControlDatabase();void database.settings.get("workspace").then(settings=>settings&&database.settings.update("workspace",{layout:{sidebarWidth,agentPanelWidth,terminalHeight},updatedAt:Date.now()}));},250);return()=>window.clearTimeout(timer);},[layoutLoaded,sidebarWidth,agentPanelWidth,terminalHeight]);
+  useEffect(()=>{if(currentProject)void refreshOperationalMemory(getControlDatabase(),currentProject);},[currentProject?.id,currentProject?.path]);
+  useEffect(()=>{const database=getControlDatabase(),refresh=()=>void database.inboxItems.all().then(items=>setGlobalInboxItems(items.filter(item=>item.toParticipantId===LOCAL_PARTICIPANT_ID&&(item.status==="open"||item.status==="acknowledged")).sort((a,b)=>b.createdAt-a.createdAt)));refresh();return database.inboxItems.subscribe(refresh);},[]);
+  const newInboxItems=globalInboxItems.filter(item=>item.status==="open"),inboxTone=newInboxItems.some(item=>item.type==="escalation")?"urgent":newInboxItems.some(item=>item.type==="question"||item.type==="approval")?"attention":newInboxItems.length?"new":"";
 
   const handleAddProject = async () => {
     if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("Switch projects with unsaved editor changes? Recovery drafts are retained unless they contain sensitive data."))return;
@@ -81,7 +86,7 @@ export default function Workbench() {
   const handleRemoveProject=async()=>{if(!currentProject)return;if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("This project has unsaved editor changes. Continue removing it from Control?"))return;if(!window.confirm(`Remove ${currentProject.name} from Control? Project files will not be deleted.`))return;const removed=await removeProject(currentProject.id);if(!removed)window.alert("Project could not be removed. Stop active work and try again.");};
 
   useEffect(() => {
-    const handleCommand=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="open-file")setQuickOpen(true);else if(command==="switch-project"){document.querySelector<HTMLSelectElement>(".project-selector")?.focus();}else if(command==="open-project")void handleAddProject();};
+    const handleCommand=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="open-file")setQuickOpen(true);else if(command==="switch-project"){document.querySelector<HTMLSelectElement>(".project-selector")?.focus();}else if(command==="open-project")void handleAddProject();else if(command==="toggle-terminal-size")setTerminalHeight(height=>height>400?220:Math.min(650,Math.round(window.innerHeight*.55)));};
     window.addEventListener("control-command",handleCommand);return()=>window.removeEventListener("control-command",handleCommand);
   },[openFile]);
 
@@ -90,7 +95,7 @@ export default function Workbench() {
       if (!isResizing) return;
 
       if (isResizing === "sidebar") {
-        setSidebarWidth(Math.max(200, Math.min(500, e.clientX)));
+        setSidebarWidth(Math.max(300, Math.min(520, e.clientX)));
       } else if (isResizing === "agent") {
         setAgentPanelWidth(
           Math.max(200, Math.min(500, window.innerWidth - e.clientX))
@@ -158,6 +163,8 @@ export default function Workbench() {
           </select>
         </div>
         <div className="header-right">
+          <button className={`header-global inbox-indicator ${inboxTone}`} onClick={()=>window.dispatchEvent(new CustomEvent("control-command",{detail:"open-global-inbox"}))}>Inbox{globalInboxItems.length?` ${globalInboxItems.length}`:""}{newInboxItems.length>0&&<span className="inbox-new-dot" title={`${newInboxItems.length} new`}/>}</button>
+          <button className="header-global" onClick={()=>window.dispatchEvent(new CustomEvent("control-command",{detail:"open-global-intelligence"}))}>Intelligence</button>
           <button className="header-action" onClick={() => void handleAddProject()}>
             Open Project
           </button>
@@ -190,6 +197,7 @@ export default function Workbench() {
             onExplorerRefresh={loadExplorerTree}
             showGeneratedFiles={showGeneratedFiles}
             onShowGeneratedFilesChange={setShowGeneratedFiles}
+            dirtyPaths={Array.from(workspaceState.openFiles.values()).filter(file=>file.isDirty).map(file=>file.path)}
           />
           <div
             className="resize-handle resize-handle-right"
@@ -211,17 +219,11 @@ export default function Workbench() {
           />
         </div>
 
-        {/* Right Agent Panel */}
-        <div
-          className="agent-panel-container"
-          style={{ width: `${agentPanelWidth}px` }}
-        >
-          <CoordinationPanel project={currentProject} />
-          <div
-            className="resize-handle resize-handle-left"
-            onMouseDown={() => setIsResizing("agent")}
-          />
+        <div className="agent-panel-container" style={{width:`${agentPanelWidth}px`}}>
+          <div className="resize-handle resize-handle-left" onMouseDown={()=>setIsResizing("agent")}/>
+          <ControlPanel project={currentProject} projects={projects} inboxItems={globalInboxItems}/>
         </div>
+
       </div>
 
       {/* Terminal */}

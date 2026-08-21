@@ -45,6 +45,8 @@ cd src-tauri && cargo tauri build
 - `CONTROL_REPOSITORY_AUDIT.md` and `control-repository-audit.json` — repository
   integrity evidence.
 
-Supported runtimes are Claude Code, Codex, OpenCode, and read-only Ollama.
+Supported runtimes are Claude Code, Codex, OpenCode, and Ollama. Coding-capable Ollama models run through Ollama's headless Claude Code integration, giving supervised workspace-scoped Read/Edit/Write/Bash tools. Automatic routing prefers this local coding path when it is available, then falls back to compatible installed cloud CLIs.
+
+Provider API keys for OpenAI, Anthropic, OpenRouter, and Gemini can be configured under **Intelligence → Provider credentials**. Keys remain in the operating-system credential store and are never written to FeltDB or backups. An installed Codex or Claude Code CLI receives its corresponding key at process launch.
 Runtime availability is discovered locally; tasks fail closed when their policy
 cannot be enforced.
