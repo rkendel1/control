@@ -49,3 +49,17 @@ export {
   validateEntityReferences,
 } from "./entity-references";
 export type { ParsedReference } from "./entity-references";
+
+export {
+  globalSearch,
+  getSearchSuggestions,
+  groupSearchResults,
+  highlightSearchTerms,
+} from "./global-search";
+export type { SearchResult, SearchQuery, SearchScope } from "./global-search";
+
+export { ConversationHistoryManager } from "./history-manager";
+export type { ConversationFilter, SortOptions } from "./history-manager";
+
+export { PreferencesManager, getPreferencesManager } from "./preferences";
+export type { ConversationPreferences } from "./preferences";
