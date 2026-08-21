@@ -27,6 +27,7 @@ export default function CommandPalette({
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const commands: Command[] = [
+    { id: "build-with-ai", label: "Build with AI", description: "Describe a feature and start an AI coding task", category: "Agent", action: () => onCommand("build-with-ai") },
     { id: "open-project", label: "Open Project", description: "Add a project folder", category: "Project", action: () => onCommand("open-project") },
     {
       id: "open-file",

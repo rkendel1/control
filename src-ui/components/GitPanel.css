@@ -19,6 +19,7 @@
 
 .git-header .decision-options { display: flex; flex-wrap: wrap; gap: 4px; }
 .git-header button { font-size: 10px; padding: 3px 5px; }
+.git-header button.push-primary{border-color:#3f9b60;background:#267443;color:#fff}.push-ready{display:flex;flex-direction:column;gap:2px;padding:6px 8px;border-left:3px solid #52a852;background:#1c3022;color:#bfe8ca;font-size:10px}.push-ready span{color:#89ae93}
 .git-branch select { min-width: 0; flex: 1; background: #333; color: #ddd; border: 1px solid #555; }
 
 .git-branch {
@@ -117,6 +118,8 @@
 }
 
 .git-working-summary{display:flex;flex-direction:column;gap:3px;padding:8px;margin-bottom:8px;border-left:3px solid #3c91c9;background:#23313a;color:#c9e8fa;font-size:11px}.git-working-summary span{color:#9eb5c2}.git-working-summary.unsaved{border-left-color:#d3a43c;background:#373123;color:#ffe19a}.git-working-summary.unsaved span{color:#cbbd94}
+.git-working-summary.next-step{border-left-color:#55a96d;background:#1f3327}.git-working-summary.next-step button{align-self:flex-start;margin-top:5px;border:1px solid #4e8d62;background:#28583a;color:#d9f5e2;padding:4px 7px;cursor:pointer}.commit-section .git-working-summary{margin:-4px -4px 2px}.generated-changes{margin-top:10px;padding:8px;border:1px solid #3d3d3d;color:#999;font-size:11px}.generated-changes summary{cursor:pointer;color:#bbb}.generated-changes p{line-height:1.4}.generated-changes div{padding:3px 0;color:#777}
+.protected-changes{display:grid;gap:4px;margin-bottom:8px;padding:8px;border-left:3px solid #d9a441;background:#352d1b;color:#ffe0a0;font-size:10px}.protected-changes span{color:#c8ae79}.protected-changes div{padding-top:3px;color:#e8ca91}
 .git-conflicts{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}.conflict-heading,.conflict-card{padding:9px;border:1px solid #704242;background:#342526}.conflict-heading{display:flex;flex-direction:column;gap:6px;color:#ffc0ba}.conflict-heading span,.conflict-card p{color:#cda8a4;font-size:11px}.conflict-heading button{align-self:flex-start}.conflict-card details{margin:5px 0;color:#ddd}.conflict-card pre{max-height:150px;overflow:auto;padding:6px;background:#191919;color:#ccc;font-size:10px;white-space:pre-wrap}.conflict-card .decision-options{flex-wrap:wrap;margin-top:8px}
 
 .empty {

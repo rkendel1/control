@@ -1,5 +1,5 @@
 use crate::error::Result;
-use git2::{Repository, Status};
+use git2::{IndexAddOption, Repository, Status};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -25,6 +25,27 @@ pub struct FileStatus {
 }
 
 impl GitManager {
+    fn is_protected_path(path: &str) -> bool {
+        if path.split('/').any(|part| part == ".control") {
+            return true;
+        }
+        path.split('/').any(|part| {
+            part == ".env"
+                || part.starts_with(".env.")
+                || matches!(
+                    part.to_ascii_lowercase().as_str(),
+                    "credentials.json"
+                        | "credential.json"
+                        | "secrets.json"
+                        | "secret.json"
+                        | "credentials.yaml"
+                        | "credentials.yml"
+                        | "secrets.yaml"
+                        | "secrets.yml"
+                )
+        })
+    }
+
     pub fn new() -> Result<Self> {
         Ok(Self)
     }
@@ -111,11 +132,19 @@ impl GitManager {
 
     /// Stage file for commit
     pub fn stage_file(repo_path: impl AsRef<Path>, file_path: &str) -> Result<()> {
+        if Self::is_protected_path(file_path) {
+            return Err(crate::error::ControlError::AuthorizationDenied(format!(
+                "Protected local credential file cannot be staged: {file_path}"
+            )));
+        }
         let repo_path = repo_path.as_ref();
         let repo = Repository::open(repo_path)?;
         let mut index = repo.index()?;
-        let relative = std::path::Path::new(file_path);
-        if repo_path.join(relative).exists() {
+        let normalized = file_path.trim_end_matches(['/', '\\']);
+        let relative = std::path::Path::new(normalized);
+        if repo_path.join(relative).is_dir() {
+            index.add_all([relative], IndexAddOption::DEFAULT, None)?;
+        } else if repo_path.join(relative).exists() {
             index.add_path(relative)?;
         } else {
             index.remove_path(relative)?;
@@ -260,6 +289,42 @@ mod tests {
                 .map(|file| file.status.as_str()),
             Some("D")
         );
+        std::fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn stages_every_file_in_an_untracked_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "control-git-directory-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        Repository::init(&root).expect("initialize repository");
+        std::fs::create_dir(root.join("assets")).expect("create directory");
+        std::fs::write(root.join("assets/one.txt"), "one\n").expect("write first fixture");
+        std::fs::write(root.join("assets/two.txt"), "two\n").expect("write second fixture");
+
+        GitManager::stage_file(&root, "assets/").expect("stage directory");
+
+        let status = GitManager::status(&root).expect("status after staging directory");
+        assert!(status.staged.contains(&"assets/one.txt".to_string()));
+        assert!(status.staged.contains(&"assets/two.txt".to_string()));
+        std::fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn refuses_to_stage_local_environment_files() {
+        let root = std::env::temp_dir().join(format!(
+            "control-git-secret-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        Repository::init(&root).expect("initialize repository");
+        std::fs::write(root.join(".env.local"), "API_KEY=secret\n").expect("write fixture");
+
+        let error = GitManager::stage_file(&root, ".env.local").expect_err("reject secret file");
+
+        assert!(error.to_string().contains("Protected local credential"));
+        let status = GitManager::status(&root).expect("status after rejection");
+        assert!(status.staged.is_empty());
         std::fs::remove_dir_all(&root).expect("remove fixture");
     }
 }

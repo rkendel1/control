@@ -33,6 +33,23 @@ test("ordinary task and conversation flows use automatic Control Intelligence",a
   assert.match(coordination,/item\.projectId===conversationScope&&item\.scope!=="global"/);
 });
 
+test("Build with AI creates canonical feature Work and opens the running task",async()=>{
+  const [builder,workbench,palette]=await Promise.all([read("../components/BuildWithAI.tsx"),read("../components/Workbench.tsx"),read("../components/CommandPalette.tsx")]);
+  assert.match(builder,/db\.works\.insert/);
+  assert.match(builder,/kind:"feature"/);
+  assert.match(builder,/db\.tasks\.insert/);
+  assert.match(builder,/await dispatchTask\(taskId\)/);
+  assert.match(builder,/cmd_task_attachment_write/);
+  assert.match(builder,/Paste, drop, or choose up to 12 images/);
+  assert.match(builder,/Reference screenshots/);
+  assert.match(builder,/Clarification is read-only/);
+  assert.match(builder,/Approve plan & start building/);
+  assert.match(builder,/cmd_agent_chat/);
+  assert.match(workbench,/✦ Build with AI/);
+  assert.match(workbench,/detail:"start-agent"/);
+  assert.match(palette,/label: "Build with AI"/);
+});
+
 test("repository guidance discovers commands, provenance and documentation drift",async()=>{
   const source=(await read("./operational-memory.ts"))+(await read("../components/Terminal.tsx"));
   assert.match(source,/package\.json#scripts/);

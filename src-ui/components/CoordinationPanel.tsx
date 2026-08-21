@@ -11,6 +11,7 @@ import { getSecretRedactor } from "../lib/core/secret-redactor";
 import {runtimePresetError,type RuntimePreset} from "../lib/runtime-policy";
 import {assessModelRouting} from "../lib/model-routing";
 import {parseCreateProjectIntent} from "../lib/project-intent";
+import FormDialog from "./FormDialog";
 export type CoordinationTab = "chat" | "intelligence" | "inbox" | "decisions" | "evidence" | "activity";
 type RuntimeAvailability = {
     id: string;
@@ -40,6 +41,9 @@ export default function CoordinationPanel({ project,availableProjects=[project],
     const [conversationScope,setConversationScope]=useState(scope==="global"?"global":project.id);
     const [runtimeAvailability, setRuntimeAvailability] = useState<RuntimeAvailability[]>([]);
     const [providerCredentials,setProviderCredentials]=useState<ProviderCredentialStatus[]>([]),[editingProvider,setEditingProvider]=useState<string>(),[providerSecret,setProviderSecret]=useState("");
+    const [creatingAgent,setCreatingAgent]=useState(false),[newAgent,setNewAgent]=useState({name:"",id:"",description:"",instructions:""}),[formError,setFormError]=useState<string>(),[savingForm,setSavingForm]=useState(false);
+    const [investigationForm,setInvestigationForm]=useState<{mode:"create"|"item"|"conclude";item?:ControlInvestigation;field?:"hypotheses"|"sources"|"contradictions"|"gaps";label:string;value:string}>();
+    const [remoteForm,setRemoteForm]=useState<{serverUrl:string;token:string}>(),[customDecision,setCustomDecision]=useState<{decision:ControlDecision;value:string}>();
     const firstSendInFlight=useRef(false),refreshVersion=useRef(0);
     const bounded=<T,>(operation:Promise<T>,label:string)=>Promise.race([operation,new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error(`${label} timed out. Control kept your message so you can retry.`)),5000))]);
     useEffect(()=>{const draft=sessionStorage.getItem("control-chat-draft");if(draft){setInput(draft);sessionStorage.removeItem("control-chat-draft");}},[]);
@@ -185,54 +189,31 @@ export default function CoordinationPanel({ project,availableProjects=[project],
         const changes={instructions:safe(agentDraft.instructions.trim()),runtime:normalized==="auto"?undefined:normalized,timeoutMinutes:timeout,executionPolicy,updatedAt:Date.now()};
         await db.agents.update(agent.id,changes);if(await db.intelligence.exists(agent.id))await db.intelligence.update(agent.id,changes);setEditingAgentId(undefined);setError(undefined);
     };
+    const startAgentCreation=()=>{setNewAgent({name:"",id:"",description:"",instructions:""});setFormError(undefined);setCreatingAgent(true);};
+    const updateAgentName=(name:string)=>setNewAgent(value=>{const prior=value.name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");const id=!value.id||value.id===prior?name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""):value.id;return {...value,name,id,description:value.description||`${name} role`,instructions:value.instructions||`You are the ${name} agent. Complete assigned work carefully and report concrete results.`};});
     const createAgent = async () => {
-        const name = window.prompt("Agent name")?.trim();
-        if (!name)
-            return;
-        const suggested = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-        const id = window.prompt("Agent ID", suggested)?.trim();
-        if (!id)
-            return;
-        if (await db.agents.exists(id))
-            return setError("That agent ID already exists");
-        const description = window.prompt("Agent description", `${name} role`)?.trim() || "";
-        const instructions = window.prompt("Agent instructions", `You are the ${name} agent. Complete assigned work carefully and report concrete results.`)?.trim();
-        if (!instructions)
-            return;
-        const now = Date.now(), safeName = safe(name);
-        const profile={ id, name: safeName, description: safe(description), instructions: safe(instructions), capabilities: [],timeoutMinutes:60, executionPolicy: { filesystem: "workspace-write" as const, shell: true, network: false }, status: "active" as const, createdAt: now, updatedAt: now };
-        await db.agents.insert(profile, id);await db.intelligence.insert({...profile,provider:"auto"},id);
-        await db.participants.insert({ id, type: "agent", name: safeName, roles: ["agent"], capabilities: [], status: "active", createdAt: now, updatedAt: now }, id);
+        if(!creatingAgent){startAgentCreation();return;}
+        const name=newAgent.name.trim(),id=newAgent.id.trim(),instructions=newAgent.instructions.trim();setFormError(undefined);
+        if(!name)return setFormError("Name is required.");
+        if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id))return setFormError("ID must use lowercase letters, numbers, and single dashes.");
+        if(await db.agents.exists(id))return setFormError("That agent ID already exists.");
+        if(!instructions)return setFormError("Instructions are required.");
+        setSavingForm(true);const now = Date.now(), safeName = safe(name);
+        try{const profile={ id, name: safeName, description: safe(newAgent.description.trim()), instructions: safe(instructions), capabilities: [],timeoutMinutes:60, executionPolicy: { filesystem: "workspace-write" as const, shell: true, network: false }, status: "active" as const, createdAt: now, updatedAt: now };
+        await db.agents.insert(profile, id);await db.intelligence.insert({...profile,provider:"auto"},id);await db.participants.insert({ id, type: "agent", name: safeName, roles: ["agent"], capabilities: [], status: "active", createdAt: now, updatedAt: now }, id);setCreatingAgent(false);}catch(reason){setFormError(reason instanceof Error?reason.message:String(reason));}finally{setSavingForm(false);}
     };
     const toggleAgent = async (agent: ControlAgent) => { try{const status = agent.status === "active" ? "disabled" : "active", updatedAt = Date.now(); await db.agents.update(agent.id, { status, updatedAt });if(await db.intelligence.exists(agent.id))await db.intelligence.update(agent.id,{status,updatedAt}); if (await db.participants.exists(agent.id))await db.participants.update(agent.id, { status, updatedAt });setError(undefined);}catch(reason){setError(reason instanceof Error?reason.message:String(reason));} };
     const editLocalParticipant = () => { const participant = participants.find(item => item.id === LOCAL_PARTICIPANT_ID);if(!participant)return setError("Local participant is unavailable");setIdentityName(participant.name);setEditingIdentity(true);setError(undefined);};
     const saveLocalParticipant=async()=>{const participant=participants.find(item=>item.id===LOCAL_PARTICIPANT_ID),name=identityName.trim();if(!participant)return setError("Local participant is unavailable");if(!name)return setError("Display name is required");try{await db.participants.update(participant.id,{name:safe(name),updatedAt:Date.now()});setEditingIdentity(false);setError(undefined);}catch(reason){setError(reason instanceof Error?reason.message:String(reason));}};
-    const createInvestigation = async () => {
-        const question = window.prompt("Investigation question")?.trim();
-        if (!question)
-            return;
-        const safeQuestion = safe(question), now = Date.now(), workId = createId("work"), id = createId("investigation");
-        await db.works.insert({ id: workId, projectId: project.id, title: safeQuestion, intent: safeQuestion, kind: "investigation", status: "active", createdAt: now, updatedAt: now }, workId);
-        await db.investigations.insert({ id, projectId: project.id, workId, question: safeQuestion, hypotheses: [], sources: [], contradictions: [], gaps: [], status: "open", createdAt: now, updatedAt: now }, id);
-        const activityId = createId("activity");
-        await db.activity.insert({ id: activityId, projectId: project.id, workId, type: "investigation_created", actor: LOCAL_PARTICIPANT_ID, summary: `Investigation created: ${safeQuestion}`, createdAt: now }, activityId);
-    };
-    const addInvestigationItem = async (item: ControlInvestigation, field: "hypotheses" | "sources" | "contradictions" | "gaps", label: string) => {
-        const value = window.prompt(label)?.trim();
-        if (!value)
-            return;
-        await db.investigations.update(item.id, { [field]: [...item[field], safe(value)], updatedAt: Date.now() });
-    };
-    const concludeInvestigation = async (item: ControlInvestigation) => {
-        const conclusion = window.prompt("Conclusion", item.conclusion || "")?.trim();
-        if (!conclusion)
-            return;
-        const safeConclusion = safe(conclusion), now = Date.now(), evidenceId = createId("evidence"), outcomeId = createId("outcome");
-        await db.investigations.update(item.id, { conclusion: safeConclusion, status: "concluded", updatedAt: now });
-        await db.works.update(item.workId, { status: "completed", completedAt: now, updatedAt: now });
-        await db.evidence.insert({ id: evidenceId, projectId: item.projectId, workId: item.workId, kind: "source", summary: `Investigation concluded with ${item.sources.length} source(s)`, result: item.sources.length ? "passed" : "unknown", provenance: safe(item.sources.join("\n") || "User conclusion"), createdAt: now }, evidenceId);
-        await db.outcomes.insert({ id: outcomeId, projectId: item.projectId, workId: item.workId, status: item.sources.length ? "passed" : "partially_verified", summary: safeConclusion, evidenceIds: [evidenceId], createdAt: now }, outcomeId);
-    };
+    const saveInvestigationForm = async () => {if(!investigationForm||savingForm)return;const value=investigationForm.value.trim();if(!value)return setFormError(`${investigationForm.label} is required.`);setSavingForm(true);setFormError(undefined);try{
+        if(investigationForm.mode==="create"){const safeQuestion = safe(value), now = Date.now(), workId = createId("work"), id = createId("investigation");await db.works.insert({ id: workId, projectId: project.id, title: safeQuestion, intent: safeQuestion, kind: "investigation", status: "active", createdAt: now, updatedAt: now }, workId);await db.investigations.insert({ id, projectId: project.id, workId, question: safeQuestion, hypotheses: [], sources: [], contradictions: [], gaps: [], status: "open", createdAt: now, updatedAt: now }, id);const activityId = createId("activity");await db.activity.insert({ id: activityId, projectId: project.id, workId, type: "investigation_created", actor: LOCAL_PARTICIPANT_ID, summary: `Investigation created: ${safeQuestion}`, createdAt: now }, activityId);}
+        else if(investigationForm.mode==="item"&&investigationForm.item&&investigationForm.field){const item=investigationForm.item,field=investigationForm.field;await db.investigations.update(item.id,{[field]:[...item[field],safe(value)],updatedAt:Date.now()});}
+        else if(investigationForm.item){const item=investigationForm.item,safeConclusion=safe(value),now=Date.now(),evidenceId=createId("evidence"),outcomeId=createId("outcome");await db.investigations.update(item.id,{conclusion:safeConclusion,status:"concluded",updatedAt:now});await db.works.update(item.workId,{status:"completed",completedAt:now,updatedAt:now});await db.evidence.insert({id:evidenceId,projectId:item.projectId,workId:item.workId,kind:"source",summary:`Investigation concluded with ${item.sources.length} source(s)`,result:item.sources.length?"passed":"unknown",provenance:safe(item.sources.join("\n")||"User conclusion"),createdAt:now},evidenceId);await db.outcomes.insert({id:outcomeId,projectId:item.projectId,workId:item.workId,status:item.sources.length?"passed":"partially_verified",summary:safeConclusion,evidenceIds:[evidenceId],createdAt:now},outcomeId);}
+        setInvestigationForm(undefined);
+    }catch(reason){setFormError(reason instanceof Error?reason.message:String(reason));}finally{setSavingForm(false);}};
+    const createInvestigation=()=>{setFormError(undefined);setInvestigationForm({mode:"create",label:"Question",value:""});};
+    const addInvestigationItem=(item:ControlInvestigation,field:"hypotheses"|"sources"|"contradictions"|"gaps",label:string)=>{setFormError(undefined);setInvestigationForm({mode:"item",item,field,label,value:""});};
+    const concludeInvestigation=(item:ControlInvestigation)=>{setFormError(undefined);setInvestigationForm({mode:"conclude",item,label:"Conclusion",value:item.conclusion||""});};
     const exportData = async () => {
         const path = await save({ defaultPath: `control-backup-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: "Control backup", extensions: ["json"] }] });
         if (!path)
@@ -271,22 +252,18 @@ export default function CoordinationPanel({ project,availableProjects=[project],
             setError(reason instanceof Error ? reason.message : String(reason));
         }
     };
-    const configureRemote = async () => {
-        const serverUrl = window.prompt("FeltDB server URL (HTTPS, or localhost HTTP)", topology.serverUrl || "")?.trim();
-        if (!serverUrl)
-            return;
-        const token = window.prompt("FeltDB access token (stored only in the OS credential store)")?.trim();
-        if (!token || !window.confirm("Copy all current Control records to this FeltDB server and use it after restart?"))
-            return;
-        setError(undefined);
+    const configureRemote = () => {setFormError(undefined);setRemoteForm({serverUrl:topology.serverUrl||"",token:""});};
+    const saveRemote = async () => {
+        if(!remoteForm)return;const serverUrl=remoteForm.serverUrl.trim(),token=remoteForm.token.trim();if(!serverUrl||!token)return setFormError("Server URL and access token are required.");
+        setError(undefined);setFormError(undefined);setSavingForm(true);
         try {
             const count = await migrateControlToServer(serverUrl, token);
             window.alert(`Migrated ${count} records. Control will restart using the server.`);
             window.location.reload();
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
-        }
+            setFormError(reason instanceof Error ? reason.message : String(reason));
+        }finally{setSavingForm(false);}
     };
     const configureLocal = async () => {
         if (!window.confirm("Copy the current server state to this machine and return to local FeltDB?"))
@@ -313,6 +290,10 @@ export default function CoordinationPanel({ project,availableProjects=[project],
     </div>;};
     const stopRun=async(run:ControlRun)=>{if(!run.pid)return;const response=await invoke("cmd_agent_run_stop",{pid:run.pid,expectedProcessStartedAt:run.processStartedAt});if(!response.success)return setError(response.error);const now=Date.now();await db.runs.update(run.id,{status:"stopped",completedAt:now,error:"Stopped by user"});if(run.kind==="conversation"){if(run.requestMessageId)await db.messages.update(run.requestMessageId,{deliveryStatus:"failed",error:"Response stopped by user",runId:run.id});await db.works.update(run.workId,{status:"active",updatedAt:now});}else if(run.taskId){await db.transitionRuntimeWork(run.taskId,"requeued",{updatedAt:now});}const id=createId("activity");await db.activity.insert({id,projectId:run.projectId,workId:run.workId,taskId:run.taskId,runId:run.id,type:"run_stopped",actor:LOCAL_PARTICIPANT_ID,summary:run.kind==="conversation"?"Conversation response stopped":"Agent run stopped",createdAt:now},id);};
     return <div className="coordination-panel">
+        {creatingAgent&&<FormDialog title="Create intelligence profile" description="Profiles are advanced execution configurations. Ordinary work can continue using automatic Control Intelligence." submitLabel="Create profile" disabled={savingForm||!newAgent.name.trim()||!newAgent.id.trim()||!newAgent.instructions.trim()} onClose={()=>setCreatingAgent(false)} onSubmit={createAgent}><label>Name<input value={newAgent.name} onChange={event=>updateAgentName(event.target.value)} autoComplete="off"/></label><label>Stable ID<input value={newAgent.id} onChange={event=>setNewAgent(value=>({...value,id:event.target.value.toLowerCase().replace(/[^a-z0-9-]/g,"")}))} autoComplete="off"/><small>Lowercase letters, numbers, and dashes. This becomes durable identity.</small></label><label>Description<input value={newAgent.description} onChange={event=>setNewAgent(value=>({...value,description:event.target.value}))}/></label><label>Instructions<textarea value={newAgent.instructions} onChange={event=>setNewAgent(value=>({...value,instructions:event.target.value}))}/></label>{formError&&<div className="field-error" role="alert">{formError}</div>}</FormDialog>}
+        {investigationForm&&<FormDialog title={investigationForm.mode==="create"?"New investigation":investigationForm.mode==="conclude"?"Conclude investigation":`Add ${investigationForm.label.toLowerCase()}`} description={investigationForm.mode==="conclude"?"The conclusion creates durable Evidence and an Outcome for this Work.":undefined} submitLabel={investigationForm.mode==="conclude"?"Conclude":"Add"} disabled={savingForm||!investigationForm.value.trim()} onClose={()=>setInvestigationForm(undefined)} onSubmit={saveInvestigationForm}><label>{investigationForm.label}<textarea value={investigationForm.value} onChange={event=>setInvestigationForm(value=>value?{...value,value:event.target.value}:value)}/></label>{formError&&<div className="field-error" role="alert">{formError}</div>}</FormDialog>}
+        {remoteForm&&<FormDialog title="Use a FeltDB server" description="Control will copy the complete Work graph before changing topology. The token is stored only in the operating-system credential store." submitLabel="Copy records and switch" disabled={savingForm||!remoteForm.serverUrl.trim()||!remoteForm.token.trim()} onClose={()=>setRemoteForm(undefined)} onSubmit={saveRemote}><label>Server URL<input type="url" value={remoteForm.serverUrl} onChange={event=>setRemoteForm(value=>value&&({...value,serverUrl:event.target.value}))} placeholder="https://feltdb.example.com"/></label><label>Access token<input type="password" autoComplete="off" value={remoteForm.token} onChange={event=>setRemoteForm(value=>value&&({...value,token:event.target.value}))}/></label>{formError&&<div className="field-error" role="alert">{formError}</div>}</FormDialog>}
+        {customDecision&&<FormDialog title={customDecision.decision.question} submitLabel="Answer" disabled={!customDecision.value.trim()} onClose={()=>setCustomDecision(undefined)} onSubmit={async()=>{await answer(customDecision.decision,customDecision.value.trim());setCustomDecision(undefined);}}><label>Your answer<textarea value={customDecision.value} onChange={event=>setCustomDecision(value=>value&&({...value,value:event.target.value}))}/></label></FormDialog>}
         {!hideNavigation&&<div className="coordination-tabs">{(["chat","intelligence","inbox","decisions","evidence","activity"] as CoordinationTab[]).map(item=><button key={item} className={tab===item?"active":""} onClick={()=>setTab(item)}>{item}{item==="inbox"&&inboxCount?` ${inboxCount}`:""}</button>)}</div>}
         {error&&<div className="coordination-error">{error}{error.includes("timed out")&&<button onClick={()=>void recoverData()}>Restart data connection</button>}</div>}
         {messageAction&&<div className="coordination-action-notice">{messageAction}</div>}
@@ -338,7 +319,7 @@ export default function CoordinationPanel({ project,availableProjects=[project],
             {tasks.filter(item=>["review","awaiting-input","failed"].includes(item.status)).map(item=><div className="decision-card" key={item.id}><strong>{item.status==="review"?"Ready for review":item.status==="awaiting-input"?"Awaiting input":"Run failed"}: {item.title}</strong><p>{agents.find(agent=>agent.id===item.assignedTo)?.name||"Unassigned"}</p><button onClick={()=>window.dispatchEvent(new CustomEvent("control-command",{detail:"start-agent"}))}>Open task</button></div>)}
             {runs.filter(item=>item.status==="interrupted").map(item=><div className="decision-card" key={item.id}><strong>Interrupted Run</strong><p>{tasks.find(task=>task.id===item.taskId)?.title||item.taskId}</p><button onClick={()=>setTab("intelligence")}>Inspect Run</button></div>)}
         </div>}
-        {tab==="decisions"&&<div className="decision-list">{decisions.length===0&&<div className="coordination-empty">No decisions</div>}{decisions.map(decision=><div className="decision-card" key={decision.id}><strong>{decision.question}</strong>{decision.context&&<p>{decision.context}</p>}{decision.status==="pending"?<div className="decision-options">{decision.options.map(option=><button key={option} onClick={()=>void answer(decision,option)}>{option}</button>)}<button onClick={()=>{const value=window.prompt("Your answer")?.trim();if(value)void answer(decision,value);}}>Custom…</button></div>:<div className="decision-answer">Answered: {decision.answer}</div>}</div>)}</div>}
+        {tab==="decisions"&&<div className="decision-list">{decisions.length===0&&<div className="coordination-empty">No decisions</div>}{decisions.map(decision=><div className="decision-card" key={decision.id}><strong>{decision.question}</strong>{decision.context&&<p>{decision.context}</p>}{decision.status==="pending"?<div className="decision-options">{decision.options.map(option=><button key={option} onClick={()=>void answer(decision,option)}>{option}</button>)}<button onClick={()=>setCustomDecision({decision,value:""})}>Custom…</button></div>:<div className="decision-answer">Answered: {decision.answer}</div>}</div>)}</div>}
         {tab==="evidence"&&<div className="decision-list">
             <div className="decision-options"><button onClick={()=>void createInvestigation()}>New investigation</button></div>
             {investigations.map(item=><div className="decision-card" key={item.id}><strong>{item.question}</strong><p>{item.status} · {item.hypotheses.length} hypotheses · {item.sources.length} sources · {item.gaps.length} gaps</p>{item.hypotheses.map(value=><div key={`h-${value}`}>Hypothesis: {value}</div>)}{item.sources.map(value=><div key={`s-${value}`}>Source: {value}</div>)}{item.contradictions.map(value=><div key={`c-${value}`}>Contradiction: {value}</div>)}{item.gaps.map(value=><div key={`g-${value}`}>Gap: {value}</div>)}{item.conclusion&&<div className="decision-answer">Conclusion: {item.conclusion}</div>}{item.status==="open"&&<div className="decision-options"><button onClick={()=>void addInvestigationItem(item,"hypotheses","Hypothesis")}>+ Hypothesis</button><button onClick={()=>void addInvestigationItem(item,"sources","Source URL or citation")}>+ Source</button><button onClick={()=>void addInvestigationItem(item,"contradictions","Contradiction")}>+ Contradiction</button><button onClick={()=>void addInvestigationItem(item,"gaps","Evidence gap")}>+ Gap</button><button onClick={()=>void concludeInvestigation(item)}>Conclude</button></div>}</div>)}

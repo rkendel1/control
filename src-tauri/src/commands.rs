@@ -35,6 +35,81 @@ impl<T> CommandResponse<T> {
 }
 
 #[tauri::command]
+pub async fn cmd_task_attachment_write(
+    workspace_path: String,
+    task_id: String,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<CommandResponse<String>, String> {
+    const MAX_SCREENSHOT_BYTES: usize = 20 * 1024 * 1024;
+    let workspace = match std::path::Path::new(&workspace_path).canonicalize() {
+        Ok(path) if path.is_dir() => path,
+        _ => return Ok(CommandResponse::err("Project workspace is unavailable".into())),
+    };
+    if task_id.is_empty()
+        || !task_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Ok(CommandResponse::err("Invalid attachment task identity".into()));
+    }
+    if bytes.is_empty() || bytes.len() > MAX_SCREENSHOT_BYTES {
+        return Ok(CommandResponse::err(
+            "Screenshots must be between 1 byte and 20 MB".into(),
+        ));
+    }
+    let source_name = std::path::Path::new(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("screenshot.png");
+    let extension = std::path::Path::new(source_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif") {
+        return Ok(CommandResponse::err(
+            "Attachments must be PNG, JPEG, WebP, or GIF images".into(),
+        ));
+    }
+    let stem = std::path::Path::new(source_name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("screenshot");
+    let safe_stem: String = stem
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .take(80)
+        .collect();
+    let directory = workspace.join(".control").join("attachments").join(&task_id);
+    if let Err(error) = tokio::fs::create_dir_all(&directory).await {
+        return Ok(CommandResponse::err(format!(
+            "Could not create the screenshot folder: {error}"
+        )));
+    }
+    let stored_name = format!(
+        "{}-{}.{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..8],
+        safe_stem,
+        extension
+    );
+    if let Err(error) = tokio::fs::write(directory.join(&stored_name), bytes).await {
+        return Ok(CommandResponse::err(format!(
+            "Could not save screenshot: {error}"
+        )));
+    }
+    Ok(CommandResponse::ok(format!(
+        ".control/attachments/{task_id}/{stored_name}"
+    )))
+}
+
+#[tauri::command]
 pub fn cmd_launch_projects() -> Result<CommandResponse<Vec<String>>, String> {
     let projects = std::env::args()
         .skip(1)
@@ -982,11 +1057,32 @@ pub fn cmd_runtime_availability() -> Result<CommandResponse<Vec<RuntimeAvailabil
 #[cfg(test)]
 mod terminal_tests {
     use super::{
-        detect_test_command, first_ollama_model, open_terminal_process, process_identity_matches,
+        cmd_task_attachment_write, detect_test_command, first_ollama_model, open_terminal_process, process_identity_matches,
         process_started_at, runtime_supports_policy, valid_agent_timeout,
         validate_feltdb_server_url,
     };
     use std::io::{Read, Write};
+
+    #[tokio::test]
+    async fn screenshot_attachments_are_workspace_scoped() {
+        let root = std::env::temp_dir().join(format!(
+            "control-screenshot-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).expect("create workspace");
+        let response = cmd_task_attachment_write(
+            root.to_string_lossy().to_string(),
+            "task-123".into(),
+            "reference.png".into(),
+            vec![137, 80, 78, 71],
+        )
+        .await
+        .expect("attachment response");
+        let relative = response.data.expect("attachment path");
+        assert!(relative.starts_with(".control/attachments/task-123/"));
+        assert!(root.join(relative).is_file());
+        std::fs::remove_dir_all(root).expect("remove workspace");
+    }
 
     #[test]
     fn detects_project_test_commands() {

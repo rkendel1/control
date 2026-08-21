@@ -31,6 +31,7 @@ fn main() {
             commands::cmd_project_inspect,
             commands::cmd_project_create,
             commands::cmd_project_test_command,
+            commands::cmd_task_attachment_write,
             commands::cmd_agent_run_start,
             commands::cmd_agent_run_stop,
             commands::cmd_process_is_running,

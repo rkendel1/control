@@ -89,6 +89,7 @@
 .header-action:hover {
   background: #1177bb;
 }
+.header-build-ai{border:1px solid #388fbc;border-radius:4px;background:linear-gradient(135deg,#126b9a,#5141a1);color:#fff;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 0 0 1px rgba(255,255,255,.04) inset}.header-build-ai:hover{filter:brightness(1.14)}
 .header-global{background:transparent;border:1px solid #484848;color:#bbb;padding:6px 9px;border-radius:4px;cursor:pointer;font-size:11px}.header-global:hover{color:#fff;border-color:#777;background:#303030}
 .inbox-indicator{position:relative}.inbox-indicator.new{border-color:#2477b3;color:#8dccff}.inbox-indicator.attention{border-color:#a27b24;color:#ffd36b}.inbox-indicator.urgent{border-color:#a74747;color:#ff9a9a}.inbox-new-dot{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:#3aa8ff;box-shadow:0 0 0 2px #252526}.attention .inbox-new-dot{background:#ffc54d}.urgent .inbox-new-dot{background:#ff5d5d}
 

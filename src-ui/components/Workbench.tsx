@@ -14,6 +14,7 @@ import { getControlDatabase,LOCAL_PARTICIPANT_ID,type ControlInboxItem } from ".
 import QuickOpen from "./QuickOpen";
 import ControlPanel from "./ControlPanel";
 import {invoke} from "../lib/tauri";
+import BuildWithAI from "./BuildWithAI";
 
 export default function Workbench() {
   useRunEvents();
@@ -51,6 +52,7 @@ export default function Workbench() {
   const [globalInboxItems,setGlobalInboxItems]=useState<ControlInboxItem[]>([]);
   const [projectNotice,setProjectNotice]=useState<string>();
   const [agentExpanded,setAgentExpanded]=useState(false);
+  const [buildingWithAI,setBuildingWithAI]=useState(false);
   const [isResizing, setIsResizing] = useState<
     "sidebar" | "agent" | "terminal" | null
   >(null);
@@ -88,7 +90,7 @@ export default function Workbench() {
   const handleRemoveProject=async()=>{if(!currentProject)return;if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("This project has unsaved editor changes. Continue removing it from Control?"))return;if(!window.confirm(`Remove ${currentProject.name} from Control? Project files will not be deleted.`))return;const removed=await removeProject(currentProject.id);if(!removed)window.alert("Project could not be removed. Stop active work and try again.");};
 
   useEffect(() => {
-    const handleCommand=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="open-file")setQuickOpen(true);else if(command==="switch-project"){document.querySelector<HTMLSelectElement>(".project-selector")?.focus();}else if(command==="open-project")void handleAddProject();else if(command==="toggle-terminal-size")setTerminalHeight(height=>height>400?220:Math.min(650,Math.round(window.innerHeight*.55)));};
+    const handleCommand=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="open-file")setQuickOpen(true);else if(command==="build-with-ai")setBuildingWithAI(true);else if(command==="switch-project"){document.querySelector<HTMLSelectElement>(".project-selector")?.focus();}else if(command==="open-project")void handleAddProject();else if(command==="toggle-terminal-size")setTerminalHeight(height=>height>400?220:Math.min(650,Math.round(window.innerHeight*.55)));};
     window.addEventListener("control-command",handleCommand);return()=>window.removeEventListener("control-command",handleCommand);
   },[openFile]);
   useEffect(()=>{const handler=(event:Event)=>{const detail=(event as CustomEvent<{location:"desktop"|"documents";name:string}>).detail;void (async()=>{const response=await invoke<string>("cmd_project_create",detail);if(!response.success||!response.data){window.alert(response.error||"Could not create project");return;}if(!await addProject(response.data,detail.name))window.alert("The folder was created, but Control could not open it.");})();};window.addEventListener("control-create-project",handler);return()=>window.removeEventListener("control-create-project",handler);},[addProject]);
@@ -149,6 +151,7 @@ export default function Workbench() {
 
   return (
     <div className={`workbench ${agentExpanded?"ai-focus":""}`}>
+      {buildingWithAI&&<BuildWithAI projects={projects} currentProjectId={currentProject.id} onClose={()=>setBuildingWithAI(false)} onStarted={()=>{setBuildingWithAI(false);setAgentExpanded(true);window.dispatchEvent(new CustomEvent("control-command",{detail:"start-agent"}));}}/>}
       {quickOpen&&<QuickOpen tree={explorerTree} onOpen={openFile} onClose={()=>setQuickOpen(false)}/>} 
       {error&&<div className="workbench-error-banner"><span>{error}</span><button onClick={clearError}>Dismiss</button></div>}
       {projectNotice&&<div className="workbench-project-notice">{projectNotice}</div>}
@@ -170,6 +173,7 @@ export default function Workbench() {
           </select>
         </div>
         <div className="header-right">
+          <button className="header-build-ai" onClick={()=>setBuildingWithAI(true)}>✦ Build with AI</button>
           <button className={`header-global inbox-indicator ${inboxTone}`} onClick={()=>window.dispatchEvent(new CustomEvent("control-command",{detail:"open-global-inbox"}))}>Inbox{globalInboxItems.length?` ${globalInboxItems.length}`:""}{newInboxItems.length>0&&<span className="inbox-new-dot" title={`${newInboxItems.length} new`}/>}</button>
           <button className="header-global" onClick={()=>window.dispatchEvent(new CustomEvent("control-command",{detail:"open-global-intelligence"}))}>Intelligence</button>
           <button className="header-action" onClick={() => void handleAddProject()}>
