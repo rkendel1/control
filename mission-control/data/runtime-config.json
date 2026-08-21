@@ -1,0 +1,13 @@
+{
+  "defaultRuntime": "claude-code",
+  "runtimes": {
+    "claude-code": {
+      "type": "claude-code"
+    },
+    "ollama": {
+      "type": "ollama",
+      "baseUrl": "http://127.0.0.1:11434",
+      "model": "qwen2.5-coder:latest"
+    }
+  }
+}

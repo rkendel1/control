@@ -1,0 +1,47 @@
+[package]
+name = "control"
+version = "0.1.0"
+description = "Local Development Control Plane"
+authors = ["Randy Kendel"]
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1"
+thiserror = "1"
+regex = "1"
+walkdir = "2"
+git2 = "0.19"
+sysinfo = "0.30"
+which = "6"
+notify = "6"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-store = "2"
+nix = { version = "0.27", features = ["process"] }
+
+[target.'cfg(unix)'.dependencies]
+pam = "0.7"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.51", features = ["Win32_Foundation"] }
+
+[lib]
+name = "control"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
