@@ -1,6 +1,18 @@
 import { createFeltDB, type Collection, type StateFirstDB } from "@feltdb/core";
 import { invoke } from "./tauri.ts";
 import {runtimeWorkTransition,type RuntimeWorkTransition} from "./work-lifecycle.ts";
+type FeltRuntimeWithChanges={subscribe_changes?:(listener:(collection:string)=>void)=>(()=>void)};
+function multiplexFeltChanges(database:StateFirstDB):void{
+    const runtime=(database as unknown as {jsDb?:FeltRuntimeWithChanges}).jsDb,subscribe=runtime?.subscribe_changes?.bind(runtime);
+    if(!runtime||!subscribe)return;
+    // Collection mutations already publish through FeltDB's in-process reactive
+    // graph. Its IndexedDB change-log poller replays the full durable history in
+    // a long-lived read transaction and can block the writer in WebKit/Tauri.
+    // Control has one WebView, so the second local notification path is redundant.
+    if(database.runtime().storage==="indexeddb"){runtime.subscribe_changes=()=>()=>{};return;}
+    const listeners=new Set<(collection:string)=>void>();let stop:(()=>void)|undefined;
+    runtime.subscribe_changes=(listener)=>{listeners.add(listener);if(!stop)stop=subscribe(collection=>{for(const current of [...listeners])current(collection);});return()=>{listeners.delete(listener);if(!listeners.size&&stop){stop();stop=undefined;}};};
+}
 export type ControlDataTopology = { mode: "local" | "server"; serverUrl?: string; hasCredential: boolean; token?: string };
 export type ControlBackup = { format: "control-feltdb-snapshot"; version: 2; exportedAt: string; topology: "local" | "server"; collections: Record<string, unknown[]> };
 export type ControlProject = {
@@ -86,6 +98,7 @@ export type ControlTask = {
     archivedFrom?: Exclude<ControlTask["status"], "archived">;
     order?: number;
     modelPreference?: "auto" | "local" | "frontier";
+    scope?: "global" | "project";
 };
 export type ControlConversation = {
     id: string;
@@ -329,6 +342,7 @@ export class ControlDatabase {
         this.db = topology.mode === "server" && topology.serverUrl && topology.token
             ? createFeltDB({ namespace: "control-desktop", server: { url: topology.serverUrl, token: topology.token } })
             : createFeltDB({ namespace: "control-desktop", browser: true });
+        multiplexFeltChanges(this.db);
         this.projects = this.db.collection("control_projects");
         this.works = this.db.collection("control_work");
         this.agents = this.db.collection("control_agents");
@@ -659,6 +673,11 @@ export function getControlDataTopology(): ControlDataTopology {
     if (!controlTopology)
         throw new Error("Control data topology has not been initialized");
     return { ...controlTopology, token: undefined };
+}
+export async function restartControlDatabase():Promise<void>{
+    if(controlDatabase)await Promise.race([controlDatabase.db.close(),new Promise<void>(resolve=>window.setTimeout(resolve,750))]);
+    controlDatabase=undefined;controlTopology=undefined;
+    window.location.reload();
 }
 export async function initializeControlDatabase(): Promise<ControlDatabase> {
     if (controlDatabase)

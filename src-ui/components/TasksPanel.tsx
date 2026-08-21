@@ -1,23 +1,29 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
-import { createId, getControlDatabase, LOCAL_PARTICIPANT_ID, type ControlIntelligence, type ControlEvidence, type ControlInboxItem, type ControlOutcome, type ControlRun, type ControlTask } from "@/lib/control-db";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createId, getControlDatabase, restartControlDatabase, LOCAL_PARTICIPANT_ID, type ControlIntelligence, type ControlEvidence, type ControlInboxItem, type ControlOutcome, type ControlRun, type ControlTask } from "@/lib/control-db";
 import { dispatchTask } from "@/lib/agent-dispatch";
 import { getSecretRedactor } from "@/lib/core/secret-redactor";
+import type {Project} from "@/types";
 import "./TasksPanel.css";
 const weights: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-export default function TasksPanel({ projectId }: {
+export default function TasksPanel({ projectId,projects=[] }: {
     projectId?: string;
     projectPath?: string;
+    projects?:Project[];
 }) {
     const db = getControlDatabase();
     const safe = (value: string) => getSecretRedactor().redact(value).redacted;
     const [tasks, setTasks] = useState<ControlTask[]>([]), [agents, setAgents] = useState<ControlIntelligence[]>([]);
     const [evidence, setEvidence] = useState<ControlEvidence[]>([]), [outcomes, setOutcomes] = useState<ControlOutcome[]>([]);
     const [runs,setRuns]=useState<ControlRun[]>([]);
-    const [title, setTitle] = useState(""), [agentId, setAgentId] = useState(""), [priority, setPriority] = useState<ControlTask["priority"]>("medium"),[modelPreference,setModelPreference]=useState<NonNullable<ControlTask["modelPreference"]>>("auto");
-    const [filter, setFilter] = useState("open"), [sort, setSort] = useState("manual"), [autoRun, setAutoRun] = useState(false), [error, setError] = useState<string>();
-    const refresh = async () => { setTasks(projectId ? await db.tasks.find({ projectId }) : []); setEvidence(projectId ? await db.evidence.find({ projectId }) : []); setOutcomes(projectId ? await db.outcomes.find({ projectId }) : []);setRuns(projectId?await db.runs.find({projectId}):[]); setAgents((await db.intelligence.all()).filter(a => a.status === "active")); };
-    useEffect(() => { void refresh(); const stops = [db.tasks.subscribe(() => void refresh()), db.intelligence.subscribe(() => void refresh()), db.evidence.subscribe(() => void refresh()), db.outcomes.subscribe(() => void refresh()),db.runs.subscribe(()=>void refresh())]; return () => stops.forEach(stop => stop()); }, [projectId]);
+    const [title, setTitle] = useState(""), [agentId, setAgentId] = useState(""), [priority, setPriority] = useState<ControlTask["priority"]>("medium"),[modelPreference,setModelPreference]=useState<NonNullable<ControlTask["modelPreference"]>>("auto"),[taskContext,setTaskContext]=useState(projectId||"global");
+    const [filter, setFilter] = useState("open"), [sort, setSort] = useState("manual"), [autoRun, setAutoRun] = useState(false), [error, setError] = useState<string>(),[creating,setCreating]=useState(false),[notice,setNotice]=useState<string>();
+    const refreshVersion=useRef(0);
+    useEffect(()=>{const draft=sessionStorage.getItem("control-task-draft");if(!draft)return;try{const value=JSON.parse(draft) as {title?:string;context?:string};if(value.title)setTitle(value.title);if(value.context)setTaskContext(value.context);}finally{sessionStorage.removeItem("control-task-draft");}},[]);
+    const recoverData=async()=>{sessionStorage.setItem("control-task-draft",JSON.stringify({title,context:taskContext}));await restartControlDatabase();};
+    const refresh = async () => {const version=++refreshVersion.current,isGlobal=taskContext==="global",contextProjectId=isGlobal?undefined:taskContext;const [allTasks,nextEvidence,nextOutcomes,nextRuns,nextAgents]=await Promise.all([isGlobal?db.tasks.all():contextProjectId?db.tasks.find({projectId:contextProjectId}):Promise.resolve([]),isGlobal?db.evidence.all():contextProjectId?db.evidence.find({projectId:contextProjectId}):Promise.resolve([]),isGlobal?db.outcomes.all():contextProjectId?db.outcomes.find({projectId:contextProjectId}):Promise.resolve([]),isGlobal?db.runs.all():contextProjectId?db.runs.find({projectId:contextProjectId}):Promise.resolve([]),db.intelligence.all()]);if(version!==refreshVersion.current)return;setTasks(allTasks.filter(item=>isGlobal?item.scope==="global":item.scope!=="global"));setEvidence(nextEvidence);setOutcomes(nextOutcomes);setRuns(nextRuns);setAgents(nextAgents.filter(a=>a.status==="active")); };
+    useEffect(()=>{if(taskContext!=="global"&&!projects.some(item=>item.id===taskContext))setTaskContext(projectId||"global");},[projectId,projects,taskContext]);
+    useEffect(() => { void refresh(); const stops = [db.tasks.subscribe(() => void refresh()), db.intelligence.subscribe(() => void refresh()), db.evidence.subscribe(() => void refresh()), db.outcomes.subscribe(() => void refresh()),db.runs.subscribe(()=>void refresh())]; return () => stops.forEach(stop => stop()); }, [taskContext]);
     const shown = useMemo(() => tasks.filter(t => filter === "all" || (filter === "open" ? !["done", "archived"].includes(t.status) : t.status === filter)).sort((a, b) => sort === "newest" ? b.createdAt - a.createdAt : sort === "status" ? a.status.localeCompare(b.status) : sort==="priority"?weights[a.priority] - weights[b.priority]:(a.order??a.createdAt)-(b.order??b.createdAt)), [tasks, filter, sort]);
     const run = async (task: ControlTask) => {
         setError(undefined);
@@ -29,22 +35,25 @@ export default function TasksPanel({ projectId }: {
         }
     };
     const create = async () => {
-        if (!projectId || !title.trim())
-            return;
-        const now = Date.now(), id = createId("task"), workId = createId("work");
+        const requestedTitle=title.trim(),targetProjectId=taskContext==="global"?projectId:taskContext;if(!targetProjectId)return setError("Select a project before adding a task");if(!requestedTitle||creating)return;
+        setCreating(true);setError(undefined);setNotice(undefined);
+        try{const now = Date.now(), id = createId("task"), workId = createId("work");
         const nextOrder=tasks.reduce((highest,item)=>Math.max(highest,item.order??item.createdAt),0)+1;
-        const task: ControlTask = { id, workId, projectId, title: safe(title.trim()), description: "", status: "not-started", assignedTo: agentId || undefined, priority, urgency: "normal", tags: [], blockedBy: [], acceptanceCriteria: [], feedback: [], modelPreference,order:nextOrder,createdAt: now, updatedAt: now };
-        await db.works.insert({ id: workId, projectId, title: task.title, intent: "", kind: "task", status: "captured", createdAt: now, updatedAt: now }, workId);
-        await db.tasks.insert(task, id);
+        const task: ControlTask = { id, workId, projectId:targetProjectId,scope:taskContext==="global"?"global":"project", title: safe(requestedTitle), description: "", status: "not-started", assignedTo: agentId || undefined, priority, urgency: "normal", tags: [], blockedBy: [], acceptanceCriteria: [], feedback: [], modelPreference,order:nextOrder,createdAt: now, updatedAt: now };
+        const bounded=<T,>(operation:Promise<T>,label:string)=>Promise.race([operation,new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error(`${label} timed out. Check the task list before retrying.`)),5000))]);
+        await bounded(db.works.insert({ id: workId, projectId:targetProjectId, title: task.title, intent: "", kind: "task", status: "captured", createdAt: now, updatedAt: now }, workId),"Creating task context");
+        await bounded(db.tasks.insert(task, id),"Saving task");
+        setTasks(current=>current.some(item=>item.id===id)?current:[...current,task]);
+        setTitle("");setCreating(false);setNotice(`Added ${taskContext==="global"?"global task":`to ${projects.find(item=>item.id===targetProjectId)?.name||"project"}`}: ${task.title}`);window.setTimeout(()=>setNotice(undefined),3500);
         if (task.assignedTo) {
             const inboxId = createId("inbox");
-            await db.inboxItems.insert({ id: inboxId, projectId, workId, taskId: id, fromParticipantId: LOCAL_PARTICIPANT_ID, toParticipantId: task.assignedTo, type: "assignment", title: `Assigned: ${task.title}`, status: "open", createdAt: now, updatedAt: now }, inboxId);
+            void db.inboxItems.insert({ id: inboxId, projectId:targetProjectId, workId, taskId: id, fromParticipantId: LOCAL_PARTICIPANT_ID, toParticipantId: task.assignedTo, type: "assignment", title: `Assigned: ${task.title}`, status: "open", createdAt: now, updatedAt: now }, inboxId);
         }
         const eventId = createId("activity");
-        await db.activity.insert({ id: eventId, projectId, workId, taskId: id, type: "task_created", actor: LOCAL_PARTICIPANT_ID, summary: `Task created: ${task.title}`, createdAt: now }, eventId);
-        setTitle("");
+        void db.activity.insert({ id: eventId, projectId:targetProjectId, workId, taskId: id, type: "task_created", actor: LOCAL_PARTICIPANT_ID, summary: `Task created: ${task.title}`, createdAt: now }, eventId);
         if (autoRun)
             await run(task);
+        }catch(reason){setError(reason instanceof Error?reason.message:String(reason));}finally{setCreating(false);}
     };
     const patch = async (task: ControlTask, changes: Partial<ControlTask>) => { const updatedAt = Date.now(); await db.tasks.update(task.id, { ...changes, updatedAt }); if (changes.title !== undefined || changes.description !== undefined || changes.status !== undefined) {
         const status = changes.status === "done" ? "completed" : changes.status === "review" ? "review" : changes.status === "awaiting-input" ? "awaiting-input" : changes.status === "failed" ? "failed" : changes.status === "not-started" && task.status === "done" ? "reopened" : undefined;
@@ -80,12 +89,13 @@ export default function TasksPanel({ projectId }: {
     const move=async(task:ControlTask,direction:-1|1)=>{const ordered=[...shown],index=ordered.findIndex(item=>item.id===task.id),target=index+direction;if(index<0||target<0||target>=ordered.length)return;const other=ordered[target],base=Date.now(),firstOrder=task.order??index,secondOrder=other.order??target;await db.tasks.update(task.id,{order:secondOrder,updatedAt:base});await db.tasks.update(other.id,{order:firstOrder,updatedAt:base});setSort("manual");};
     return <div className="tasks-panel">
         <div className="tasks-compose">
+            <label className="task-context"><span>Context</span><select value={taskContext} onChange={event=>setTaskContext(event.target.value)}><option value="global">Global task</option>{projects.map(item=><option key={item.id} value={item.id}>Project · {item.name}</option>)}</select></label>
             <input className="tasks-input" placeholder="Capture a task…" value={title} onChange={event=>setTitle(event.target.value)} onKeyDown={event=>event.key==="Enter"&&void create()}/>
             <div className="tasks-compose-row">
                 <select value={agentId} onChange={event=>setAgentId(event.target.value)}><option value="">Control Intelligence (automatic)</option>{agents.map(agent=><option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>
                 <select value={priority} onChange={event=>setPriority(event.target.value as ControlTask["priority"])}>{(["critical","high","medium","low"] as const).map(value=><option key={value}>{value}</option>)}</select>
                 <select title="Model routing" value={modelPreference} onChange={event=>setModelPreference(event.target.value as NonNullable<ControlTask["modelPreference"]>)}><option value="auto">AI: Automatic</option><option value="local">AI: Local</option><option value="frontier">AI: Frontier</option></select>
-                <button className="tasks-add" onClick={()=>void create()}>Add</button>
+                <button className="tasks-add" disabled={creating||!title.trim()} onClick={()=>void create()}>{creating?"Adding…":"Add"}</button>
             </div>
             <label className="auto-dispatch"><input type="checkbox" checked={autoRun} onChange={event=>setAutoRun(event.target.checked)}/> Dispatch immediately</label>
         </div>
@@ -93,7 +103,8 @@ export default function TasksPanel({ projectId }: {
             <select value={filter} onChange={event=>setFilter(event.target.value)}><option value="open">Open</option><option value="not-started">Queued</option><option value="in-progress">Running</option><option value="review">Review</option><option value="done">Done</option><option value="archived">Archived</option><option value="all">All</option></select>
             <select value={sort} onChange={event=>setSort(event.target.value)}><option value="manual">Manual order</option><option value="priority">Priority</option><option value="newest">Newest</option><option value="status">Status</option></select>
         </div>
-        {error&&<div className="tasks-error">{error}</div>}
+        {error&&<div className="tasks-error">{error}{error.includes("timed out")&&<button onClick={()=>void recoverData()}>Restart data connection</button>}</div>}
+        {notice&&<div className="tasks-notice">{notice}</div>}
         <div className="tasks-list">{shown.length===0?<div className="tasks-empty">No matching tasks</div>:shown.map(task=>{
             const workEvidence=evidence.filter(item=>item.workId===task.workId),outcome=outcomes.filter(item=>item.workId===task.workId).sort((a,b)=>b.createdAt-a.createdAt)[0],latestRun=runs.filter(item=>item.taskId===task.id).sort((a,b)=>b.startedAt-a.startedAt)[0];
             return <div className="task-item" key={task.id}>

@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Permissions required by the Control desktop window.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-confirm",
+    "dialog:allow-ask",
+    "dialog:allow-message"
+  ]
 }

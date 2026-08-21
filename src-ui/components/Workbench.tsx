@@ -12,7 +12,6 @@ import { useRunRecovery } from "../hooks/useRunRecovery";
 import { useChatRunEvents } from "../hooks/useChatRunEvents";
 import { getControlDatabase,LOCAL_PARTICIPANT_ID,type ControlInboxItem } from "../lib/control-db";
 import QuickOpen from "./QuickOpen";
-import { refreshOperationalMemory } from "../lib/operational-memory";
 import ControlPanel from "./ControlPanel";
 import {invoke} from "../lib/tauri";
 
@@ -31,6 +30,7 @@ export default function Workbench() {
     setShowGeneratedFiles,
     isLoading,
     error,
+    projectScan,
     clearError,
     switchProject,
     openFile,
@@ -49,13 +49,14 @@ export default function Workbench() {
   const [layoutLoaded,setLayoutLoaded]=useState(false);
   const [quickOpen,setQuickOpen]=useState(false);
   const [globalInboxItems,setGlobalInboxItems]=useState<ControlInboxItem[]>([]);
+  const [projectNotice,setProjectNotice]=useState<string>();
+  const [agentExpanded,setAgentExpanded]=useState(false);
   const [isResizing, setIsResizing] = useState<
     "sidebar" | "agent" | "terminal" | null
   >(null);
 
   useEffect(()=>{void getControlDatabase().settings.get("workspace").then(settings=>{if(settings){setSidebarWidth(Math.max(300,settings.layout.sidebarWidth));setAgentPanelWidth(Math.max(300,settings.layout.agentPanelWidth));setTerminalHeight(Math.max(180,Math.min(360,settings.layout.terminalHeight)));}setLayoutLoaded(true);});},[]);
   useEffect(()=>{if(!layoutLoaded)return;const timer=window.setTimeout(()=>{const database=getControlDatabase();void database.settings.get("workspace").then(settings=>settings&&database.settings.update("workspace",{layout:{sidebarWidth,agentPanelWidth,terminalHeight},updatedAt:Date.now()}));},250);return()=>window.clearTimeout(timer);},[layoutLoaded,sidebarWidth,agentPanelWidth,terminalHeight]);
-  useEffect(()=>{if(currentProject)void refreshOperationalMemory(getControlDatabase(),currentProject);},[currentProject?.id,currentProject?.path]);
   useEffect(()=>{const database=getControlDatabase(),refresh=()=>void database.inboxItems.all().then(items=>setGlobalInboxItems(items.filter(item=>item.toParticipantId===LOCAL_PARTICIPANT_ID&&(item.status==="open"||item.status==="acknowledged")).sort((a,b)=>b.createdAt-a.createdAt)));refresh();return database.inboxItems.subscribe(refresh);},[]);
   const newInboxItems=globalInboxItems.filter(item=>item.status==="open"),inboxTone=newInboxItems.some(item=>item.type==="escalation")?"urgent":newInboxItems.some(item=>item.type==="question"||item.type==="approval")?"attention":newInboxItems.length?"new":"";
 
@@ -65,10 +66,10 @@ export default function Workbench() {
 
     try {
       const selected = await open({ directory: true, title: "Open Project" });
-      if (typeof selected === "string") {
-        path = selected;
-      }
-    } catch {
+      if (typeof selected === "string") path = selected;
+      else if(Array.isArray(selected)&&typeof selected[0]==="string")path=selected[0];
+    } catch(reason) {
+      console.error("Project picker failed",reason);
       // Fall back to manual input when dialog is unavailable.
     }
 
@@ -81,7 +82,7 @@ export default function Workbench() {
     const added = await addProject(path);
     if (!added) {
       window.alert("Failed to add project. Check the path and try again.");
-    }
+    } else {setProjectNotice(`Added ${path.split("/").filter(Boolean).pop()||path} to Control`);window.setTimeout(()=>setProjectNotice(undefined),4000);}
   };
 
   const handleRemoveProject=async()=>{if(!currentProject)return;if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("This project has unsaved editor changes. Continue removing it from Control?"))return;if(!window.confirm(`Remove ${currentProject.name} from Control? Project files will not be deleted.`))return;const removed=await removeProject(currentProject.id);if(!removed)window.alert("Project could not be removed. Stop active work and try again.");};
@@ -91,6 +92,7 @@ export default function Workbench() {
     window.addEventListener("control-command",handleCommand);return()=>window.removeEventListener("control-command",handleCommand);
   },[openFile]);
   useEffect(()=>{const handler=(event:Event)=>{const detail=(event as CustomEvent<{location:"desktop"|"documents";name:string}>).detail;void (async()=>{const response=await invoke<string>("cmd_project_create",detail);if(!response.success||!response.data){window.alert(response.error||"Could not create project");return;}if(!await addProject(response.data,detail.name))window.alert("The folder was created, but Control could not open it.");})();};window.addEventListener("control-create-project",handler);return()=>window.removeEventListener("control-create-project",handler);},[addProject]);
+  useEffect(()=>{if(!agentExpanded)return;const restore=(event:KeyboardEvent)=>{if(event.key==="Escape")setAgentExpanded(false);};window.addEventListener("keydown",restore);return()=>window.removeEventListener("keydown",restore);},[agentExpanded]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -137,6 +139,7 @@ export default function Workbench() {
         <h2>No Projects</h2>
         <p>Add or open a project to get started.</p>
         {error&&<div className="workbench-inline-error"><span>{error}</span><button onClick={clearError}>Dismiss</button></div>}
+        {projectScan&&<div className={`workbench-scan-status ${projectScan.status}`}>{projectScan.message}</div>}
         <button className="header-action" onClick={() => void handleAddProject()}>
           Open Project
         </button>
@@ -145,9 +148,11 @@ export default function Workbench() {
   }
 
   return (
-    <div className="workbench">
+    <div className={`workbench ${agentExpanded?"ai-focus":""}`}>
       {quickOpen&&<QuickOpen tree={explorerTree} onOpen={openFile} onClose={()=>setQuickOpen(false)}/>} 
       {error&&<div className="workbench-error-banner"><span>{error}</span><button onClick={clearError}>Dismiss</button></div>}
+      {projectNotice&&<div className="workbench-project-notice">{projectNotice}</div>}
+      {projectScan&&<div className={`workbench-scan-status ${projectScan.status}`}>{projectScan.status==="scanning"&&<span className="scan-spinner"/>}{projectScan.message}</div>}
       {/* Header */}
       <header className="workbench-header">
         <div className="header-left">
@@ -155,7 +160,7 @@ export default function Workbench() {
           <select
             className="project-selector"
             value={currentProject.id}
-            onChange={(e) => {if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("Switch projects with unsaved editor changes? Recovery drafts are retained unless they contain sensitive data.")){e.currentTarget.value=currentProject.id;return;}void switchProject(e.target.value);}}
+            onChange={(e) => void switchProject(e.target.value)}
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -221,9 +226,9 @@ export default function Workbench() {
           />
         </div>
 
-        <div className="agent-panel-container" style={{width:`${agentPanelWidth}px`}}>
+        <div className="agent-panel-container" style={{width:agentExpanded?"100%":`${agentPanelWidth}px`}}>
           <div className="resize-handle resize-handle-left" onMouseDown={()=>setIsResizing("agent")}/>
-          <ControlPanel project={currentProject} projects={projects} inboxItems={globalInboxItems}/>
+          <ControlPanel project={currentProject} projects={projects} inboxItems={globalInboxItems} expanded={agentExpanded} onToggleExpanded={()=>setAgentExpanded(value=>!value)}/>
         </div>
 
       </div>

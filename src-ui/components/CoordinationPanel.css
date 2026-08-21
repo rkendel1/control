@@ -3,6 +3,7 @@
 .coordination-tabs button { min-width:0; padding:8px 3px; border:0; background:#252526; color:#999; text-transform:capitalize; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .coordination-tabs button.active { color: white; border-bottom: 2px solid #4da3ff; }
 .coordination-error { padding: 8px 10px; color: #ffb4b4; background: #4a2020; font-size: 12px; white-space: pre-wrap; }
+.coordination-error>button{display:block;margin-top:7px;border:1px solid #b65f52;background:#6a302b;color:#fff;padding:5px 8px;cursor:pointer}
 .chat-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .conversation-toolbar { display: flex; gap: 6px; padding: 8px; }
 .conversation-toolbar select { min-width: 0; flex: 1; background: #2d2d30; color: #ddd; border: 1px solid #444; padding: 5px; }
@@ -20,6 +21,7 @@
 .message-failure button { border: 1px solid #a55; background: #542727; color: white; cursor: pointer; }
 .message-sender { display: block; color: #8fc7ed; font-size: 10px; margin-bottom: 4px; text-transform: capitalize; }
 .message-status { color: #aaa; font-size: 12px; font-style: italic; }
+.message-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:7px;border-top:1px solid #3d4650}.message-actions button{padding:4px 7px;border:1px solid #3b6078;border-radius:3px;background:#132b3b;color:#bfe6ff;font-size:10px;cursor:pointer}.message-actions button:hover{background:#1c4058}.coordination-action-notice{margin:6px 8px 0;padding:7px 9px;border:1px solid #397b59;border-radius:4px;background:#153625;color:#a9eac4;font-size:11px}
 .chat-input { border-top: 1px solid #333; padding: 8px; display: grid; gap: 6px; }
 .chat-input textarea { min-height: 58px; resize: vertical; background: #252526; border: 1px solid #444; color: white; padding: 7px; font: inherit; }
 .chat-input button:disabled { opacity: .45; cursor: default; }

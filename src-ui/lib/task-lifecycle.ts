@@ -74,14 +74,17 @@ export function shouldRecoverRun(run:Pick<ControlRun,"status"|"pid"|"startedAt">
 }
 
 export function recoveryAction(
-  run: Pick<ControlRun,"status"|"pid"|"processStartedAt"|"startedAt">,
+  run: Pick<ControlRun,"status"|"pid"|"processStartedAt"|"startedAt"|"heartbeatAt">,
   processRunning: boolean|undefined,
   existedAtStartup: boolean,
   now: number,
 ): "wait"|"interrupt"|"terminate-orphan" {
   if(!["starting","running"].includes(run.status))return "wait";
   if(!run.pid)return now-run.startedAt>=30_000?"interrupt":"wait";
-  if(processRunning===false)return "interrupt";
+  if(processRunning===false){
+    if(!existedAtStartup&&now-Math.max(run.heartbeatAt||0,run.startedAt)<30_000)return "wait";
+    return "interrupt";
+  }
   if(existedAtStartup&&processRunning===true)return run.processStartedAt?"terminate-orphan":"interrupt";
   return "wait";
 }

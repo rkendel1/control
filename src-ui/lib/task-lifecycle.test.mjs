@@ -50,6 +50,8 @@ test("restart recovery terminates only identity-bearing startup orphans",()=>{
   assert.equal(recoveryAction({status:"running",pid:42,startedAt:1},true,true,now),"interrupt");
   assert.equal(recoveryAction({status:"running",pid:42,processStartedAt:500,startedAt:1},true,false,now),"wait");
   assert.equal(recoveryAction({status:"running",pid:42,processStartedAt:500,startedAt:1},false,true,now),"interrupt");
+  assert.equal(recoveryAction({status:"running",pid:42,processStartedAt:500,startedAt:now-5_000,heartbeatAt:now-1_000},false,false,now),"wait");
+  assert.equal(recoveryAction({status:"running",pid:42,processStartedAt:500,startedAt:now-35_000,heartbeatAt:now-31_000},false,false,now),"interrupt");
 });
 
 test("conversation execution delivers only a completed non-empty response",()=>{

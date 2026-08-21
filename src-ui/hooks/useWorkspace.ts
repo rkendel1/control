@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "../lib/tauri";
 import { getControlDatabase, type ControlProject } from "../lib/control-db";
+import { refreshOperationalMemory } from "../lib/operational-memory";
 import {
   Project,
   Workspace,
@@ -29,6 +30,19 @@ export function useWorkspace() {
   const [showGeneratedFiles,setShowGeneratedFiles]=useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [projectScan,setProjectScan]=useState<{projectId:string;projectName:string;status:"scanning"|"complete"|"failed";message:string}|null>(null);
+
+  const scanProject=useCallback(async(database:ReturnType<typeof getControlDatabase>,project:ControlProject)=>{
+    setProjectScan({projectId:project.id,projectName:project.name,status:"scanning",message:`Scanning ${project.name}: files, Git, commands, dependencies, and project guidance…`});
+    try{
+      await refreshOperationalMemory(database,project);
+      setProjectScan({projectId:project.id,projectName:project.name,status:"complete",message:`${project.name} inventory is ready`});
+      window.setTimeout(()=>setProjectScan(current=>current?.projectId===project.id&&current.status==="complete"?null:current),4000);
+    }catch(reason){
+      const message=reason instanceof Error?reason.message:String(reason);
+      setProjectScan({projectId:project.id,projectName:project.name,status:"failed",message:`${project.name} was added, but its initial scan failed: ${message}`});
+    }
+  },[]);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -43,6 +57,7 @@ export function useWorkspace() {
         const existing=(await database.projects.all()).find(item=>item.path===inspected.data!.path),timestamp=Date.now();
         const record:ControlProject=existing||{...inspected.data,createdAt:timestamp,updatedAt:timestamp};
         if(!existing)await database.projects.insert(record,record.id);
+        void scanProject(database,record);
         launchedProjectId=record.id;
       }
       const records = await database.projects.all();
@@ -67,28 +82,28 @@ export function useWorkspace() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [scanProject]);
 
   const switchProject = useCallback(async (projectId: string) => {
     try {
-      const record = await getControlDatabase().projects.get(projectId);
-      if (record) {
-        const project = toProject(record);
-        const database=getControlDatabase(),settings=await database.settings.get("workspace"),files=settings?.openFilesByProject[projectId]||[];
-        setCurrentProject(project);
-        setWorkspaceState((prev) => ({
-          ...prev,
-          currentProjectId: projectId,
-          openFiles: tabsFor(project,files),
-          activeFileId:settings?.activeFileByProject[projectId]||files[0],
-        }));
-        setCurrentWorkspace(toWorkspace(project));
-        await database.settings.update("workspace",{activeProjectId:projectId,updatedAt:Date.now()});
-      }
+      const selected=projects.find(item=>item.id===projectId);
+      if(!selected)throw new Error("The selected project is not in Control's project list");
+      const database=getControlDatabase();
+      setCurrentProject(selected);
+      setCurrentWorkspace(toWorkspace(selected));
+      setGitStatus(null);
+      setExplorerTree([]);
+      setWorkspaceState(prev=>({...prev,currentProjectId:projectId,openFiles:new Map(),activeFileId:undefined}));
+      const record=await database.projects.get(projectId)||(await database.projects.all()).find(item=>item.id===projectId||item.path===selected.path);
+      if(!record)throw new Error(`${selected.name} is listed in Control but missing from FeltDB`);
+      const settings=await database.settings.get("workspace"),files=settings?.openFilesByProject[projectId]||[];
+      setWorkspaceState(prev=>prev.currentProjectId!==projectId?prev:{...prev,openFiles:tabsFor(selected,files),activeFileId:settings?.activeFileByProject[projectId]||files[0]});
+      if(settings)await database.settings.update("workspace",{activeProjectId:projectId,updatedAt:Date.now()});
+      void scanProject(database,record);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to switch project");
     }
-  }, []);
+  }, [projects,scanProject]);
 
   const openFile = useCallback((path: string,line?:number,column=1) => {
     const tabId = path;
@@ -255,8 +270,11 @@ export function useWorkspace() {
         const timestamp = Date.now();
         const record: ControlProject = existing || { ...inspectedProject, createdAt: timestamp, updatedAt: timestamp };
         if (!existing) await database.projects.insert(record, record.id);
-        const project = toProject(record);
-        setProjects(current=>current.some(item=>item.id===project.id)?current.map(item=>item.id===project.id?project:item):[...current,project]);
+        const persisted=await database.projects.get(record.id);
+        if(!persisted)throw new Error("FeltDB did not persist the selected project");
+        const project = toProject(persisted),allProjects=(await database.projects.all()).map(toProject);
+        if(!allProjects.some(item=>item.id===project.id))throw new Error("The selected project is missing from the Control project index");
+        setProjects(allProjects);
         const settings=await database.settings.get("workspace"),files=settings?.openFilesByProject[project.id]||[];
         setCurrentProject(project);
         setWorkspaceState((prev) => ({
@@ -268,13 +286,14 @@ export function useWorkspace() {
         setCurrentWorkspace(toWorkspace(project));
         if(settings)await database.settings.update("workspace",{activeProjectId:project.id,updatedAt:Date.now()});
         setError(null);
+        void scanProject(database,persisted);
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to add project");
         return false;
       }
     },
-    []
+    [scanProject]
   );
 
   const removeProject = useCallback(async (projectId: string) => {
@@ -327,6 +346,7 @@ export function useWorkspace() {
     setShowGeneratedFiles,
     isLoading,
     error,
+    projectScan,
     clearError:()=>setError(null),
     switchProject,
     openFile,

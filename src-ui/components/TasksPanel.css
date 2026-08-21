@@ -3,6 +3,8 @@
   display: flex;
   flex-direction: column;
   background: #1e1e1e;
+  min-width: 0;
+  container-type: inline-size;
 }
 
 .tasks-compose {
@@ -11,14 +13,17 @@
   padding: 10px;
   border-bottom: 1px solid #3e3e42;
 }
+.task-context{display:flex;align-items:center;gap:7px;color:#8295a8;font-size:10px}.task-context span{text-transform:uppercase;letter-spacing:.05em}.task-context select{flex:1;width:0}
 
-.tasks-compose-row, .tasks-controls, .task-actions { display: flex; gap: 5px; }
+.tasks-compose-row { display:grid;grid-template-columns:minmax(0,1fr) minmax(82px,.72fr);gap:5px; }
+.tasks-controls, .task-actions { display: flex; gap: 5px; }
 .task-actions { flex-wrap:wrap; }
-.tasks-compose-row select { min-width: 0; flex: 1; }
-.tasks-panel select { background: #252526; border: 1px solid #444; color: #ddd; padding: 4px; font-size: 11px; }
+.tasks-compose-row select { min-width:0;width:100%;max-width:100%; }
+.tasks-panel select { min-width:0;background: #252526; border: 1px solid #444; color: #ddd; padding: 4px; font-size: 11px; }
 .auto-dispatch { color: #999; font-size: 10px; display: flex; align-items: center; gap: 5px; }
 .tasks-controls { padding: 6px 10px; border-bottom: 1px solid #333; }
 .tasks-controls select { flex: 1; }
+.tasks-controls>*{min-width:0;width:0}
 
 .tasks-input {
   flex: 1;
@@ -36,6 +41,13 @@
   border-radius: 4px;
   padding: 6px 10px;
   cursor: pointer;
+  width:100%;
+  min-width:0;
+}
+
+@container (min-width: 430px){
+  .tasks-compose-row{grid-template-columns:minmax(0,1.2fr) minmax(78px,.65fr) minmax(100px,.8fr) auto}
+  .tasks-add{width:auto;white-space:nowrap}
 }
 
 .tasks-list {
@@ -58,6 +70,8 @@
   font-size: 12px;
   padding: 8px 10px;
 }
+.tasks-error button{display:block;margin-top:7px;border:1px solid #b65f52;background:#5a2924;color:#fff;padding:5px 8px;cursor:pointer}
+.tasks-notice{color:#a9eac4;background:#153625;border-bottom:1px solid #397b59;font-size:11px;padding:7px 10px}
 
 .task-item {
   border-bottom: 1px solid #3e3e42;

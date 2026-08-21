@@ -1,4 +1,5 @@
 const root = document.getElementById("root");
+let startupComplete=false;
 
 function escapeHtml(value: string): string {
   const element = document.createElement("span");
@@ -36,14 +37,14 @@ function showStartupFailure(reason: unknown): void {
   document.getElementById("control-retry")?.addEventListener("click", () => window.location.reload());
 }
 
-window.addEventListener("error", (event) => showStartupFailure(event.error ?? event.message));
+window.addEventListener("error", (event) => {if(!startupComplete)showStartupFailure(event.error ?? event.message);else console.error("Control runtime error",event.error??event.message);});
 window.addEventListener("unhandledrejection", (event) => {
   if(isExpectedCancellation(event.reason)){event.preventDefault();return;}
-  showStartupFailure(event.reason);
+  if(!startupComplete)showStartupFailure(event.reason);else console.error("Control runtime rejection",event.reason);
 });
 
 if (root) {
   root.innerHTML = '<div style="min-height:100vh;background:#111318;color:#b8c0cc;display:grid;place-items:center;font:14px system-ui">Starting Control…</div>';
 }
 
-void import("./bootstrap").catch(showStartupFailure);
+void import("./bootstrap").then(()=>{startupComplete=true;}).catch(showStartupFailure);

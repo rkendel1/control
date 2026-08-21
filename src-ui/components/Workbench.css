@@ -28,6 +28,8 @@
 }
 
 .workbench-error-banner button,.workbench-inline-error button { margin-left: auto; }
+.workbench-project-notice{position:absolute;z-index:101;top:64px;left:50%;transform:translateX(-50%);padding:8px 12px;border:1px solid #3d8a61;border-radius:5px;background:#173a2a;color:#a8ecc5;box-shadow:0 8px 24px #0008;font-size:12px}
+.workbench-scan-status{position:absolute;z-index:102;top:64px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:min(620px,80vw);padding:8px 12px;border:1px solid #29678d;border-radius:5px;background:#102b3e;color:#b9e4ff;box-shadow:0 8px 24px #0008;font-size:12px}.workbench-scan-status.complete{border-color:#3d8a61;background:#173a2a;color:#a8ecc5}.workbench-scan-status.failed{border-color:#a64b4b;background:#401d22;color:#ffb8b8}.scan-spinner{width:11px;height:11px;border:2px solid #4f7995;border-top-color:#d7f1ff;border-radius:50%;animation:control-spin .8s linear infinite}@keyframes control-spin{to{transform:rotate(360deg)}}
 .workbench-inline-error { display:flex;gap:16px;align-items:center;color:#ffb4b4;margin:12px 0; }
 
 .workbench-header {
@@ -176,6 +178,7 @@
   flex-direction: column;
   position: relative;
 }
+.workbench.ai-focus .sidebar,.workbench.ai-focus .editor-container{display:none}.workbench.ai-focus .agent-panel-container{border-left:0;flex:1}.workbench.ai-focus .agent-panel-container>.resize-handle{display:none}.workbench.ai-focus .terminal-container{display:none}
 
 .terminal-container {
   background: #080d13;
