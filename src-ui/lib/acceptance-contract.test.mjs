@@ -79,3 +79,13 @@ test("the complete AI workspace expands and restores without unmounting its stat
   assert.match(workbench,/event\.key==="Escape"/);
   assert.match(css,/\.workbench\.ai-focus \.terminal-container\{display:none\}/);
 });
+
+test("npm maintainers get an interactive, guarded release workflow",async()=>{
+  const [release,terminal,operations]=await Promise.all([read("../components/NpmRelease.tsx"),read("../components/Terminal.tsx"),read("../components/OperationalContext.tsx")]);
+  for(const command of ["npm whoami","npm pack --dry-run","npm version ${bump}","npm publish --access"])assert.ok(release.includes(command));
+  assert.match(release,/window\.confirm/);
+  assert.match(release,/private: true/);
+  assert.match(release,/login and 2FA remain interactive/);
+  assert.match(terminal,/run-terminal-command/);
+  assert.match(operations,/<NpmRelease projectId=\{projectId\}/);
+});
