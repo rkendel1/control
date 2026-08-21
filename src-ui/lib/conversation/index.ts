@@ -23,3 +23,29 @@ export {
   ControlTarget,
   AutoTarget,
 } from "./providers";
+
+export {
+  createArtifact,
+  extractArtifactSuggestions,
+  hasArtifacts,
+  formatArtifact,
+} from "./artifact-creator";
+export type { CreateArtifactOptions, ArtifactResult } from "./artifact-creator";
+
+export {
+  askMultipleTargets,
+  analyzeAgreement,
+  deliberate,
+  formatComparison,
+} from "./multi-ai-deliberation";
+export type { ComparisonResult, DeliberationResult } from "./multi-ai-deliberation";
+
+export {
+  parseEntityReferences,
+  resolveEntityReferences,
+  extractReferencedContext,
+  formatReferencesForDisplay,
+  enrichContextWithReferences,
+  validateEntityReferences,
+} from "./entity-references";
+export type { ParsedReference } from "./entity-references";
