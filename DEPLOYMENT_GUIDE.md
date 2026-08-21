@@ -1,8 +1,13 @@
 # Control Workbench - Deployment Guide
 
-**Status: 🚀 Production Ready**
+**Status: 🚀 Production Ready (Phase 6 Complete)**
 
-Control is a complete, end-to-end development solution for solo entrepreneurs and small teams. It combines project discovery, intelligent graph-based context, and universal agent coordination into a single system.
+Control is a complete, end-to-end development solution for solo entrepreneurs and small teams. It combines:
+- 📊 Project discovery with intelligent graph-based context
+- 🤖 Universal agent coordination across projects
+- 💬 **Unified AI Conversation Layer** with seamless AI target switching
+- 🔄 Multi-AI deliberation and agreement analysis
+- 🎯 Intelligent context injection (5 modes: Current, Project, Global, Task, Full)
 
 ## Quick Start
 
@@ -10,6 +15,21 @@ Control is a complete, end-to-end development solution for solo entrepreneurs an
 - Node.js 18+ with pnpm
 - Rust toolchain (for Tauri)
 - Git
+- API keys for Claude and/or GPT-4 (optional - Ollama can run locally)
+
+### AI Target Configuration
+
+```bash
+# For Claude support (required if using claude-opus target)
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# For GPT-4 support (optional)
+export OPENAI_API_KEY=sk-...
+
+# For Ollama support (optional - runs locally)
+# Must have Ollama daemon running on localhost:11434
+# To install: https://ollama.ai
+```
 
 ### Installation
 
@@ -52,6 +72,35 @@ npm run tauri dev
    cd src-ui
    npm run script -- scripts/full-demo.ts
    ```
+
+## What's New in Phase 6: Unified AI Conversation Layer
+
+### 🎯 Single Chat Interface, Multiple AI Targets
+
+Control now provides a unified chat interface where users can seamlessly switch between:
+- **Claude** (Anthropic) - 200K context, advanced capabilities
+- **GPT-4** (OpenAI) - 128K context, tool use enabled
+- **Ollama** - Local inference, zero cost, privacy-first
+- **Control** - Intelligent graph-aware routing
+- **Auto** - Automatic provider selection by message type
+
+### 💬 Key Features
+- **Target Switching**: Change AI provider mid-conversation without losing history
+- **Context Injection**: Automatic context in 5 modes (Current/Project/Global/Task/Full)
+- **Persistence**: All conversations stored in FeltDB alongside project graphs
+- **Multi-AI Comparison**: Send request to multiple targets, analyze agreement
+- **Entity References**: Parse [file: path], [symbol: name], [task: id] in messages
+- **Artifact Creation**: Extract tasks, decisions, requirements from conversations
+- **Global Search**: Unified search across conversations, files, tasks, commits
+- **History Management**: Filter, sort, group conversations by date/project/target
+- **User Preferences**: Per-project target selection, context mode preferences, UI settings
+
+### 📊 Architecture
+- **ConversationStore**: Conversation CRUD with FeltDB persistence
+- **ContextResolver**: 5-mode context gathering and markdown formatting
+- **AIConversationTarget**: Normalized interface for all AI providers
+- **TargetRegistry**: Availability tracking and provider capabilities
+- **UnifiedChat**: React component with full UI and keyboard shortcuts
 
 ## What Control Does
 
@@ -219,26 +268,49 @@ Formats context as markdown for agent consumption.
 
 ```
 control/
-├── src-tauri/                   # Rust Tauri backend
+├── src-tauri/                          # Rust Tauri backend
 │   └── src/
-│       └── graph.rs            # Filesystem layer
-├── src-ui/                      # TypeScript frontend
+│       └── graph.rs                   # Filesystem layer
+├── src-ui/                            # TypeScript frontend
 │   ├── components/
-│   │   └── project-manager.tsx # Main UI component
+│   │   ├── project-manager.tsx        # Project discovery UI
+│   │   └── unified-chat.tsx           # AI conversation UI (NEW)
 │   ├── lib/graph/
-│   │   ├── index.ts           # Graph repository factory
-│   │   ├── discovery.ts       # Project discovery orchestration
-│   │   ├── global.ts          # Global graph layer
-│   │   ├── context-engine.ts  # Context generation
-│   │   ├── daemon-integration.ts # Mission-control integration
+│   │   ├── index.ts                  # Graph repository factory
+│   │   ├── discovery.ts              # Project discovery orchestration
+│   │   ├── global.ts                 # Global graph layer
+│   │   ├── context-engine.ts         # Context generation
+│   │   ├── context-resolver.ts       # 5-mode context resolution (NEW)
+│   │   ├── conversation-store.ts     # Conversation persistence (NEW)
+│   │   ├── daemon-integration.ts     # Mission-control integration
 │   │   └── FeltDBGraphRepository.ts
+│   ├── lib/conversation/             # AI Target Abstraction (NEW)
+│   │   ├── ai-target.ts              # Target interface & registry
+│   │   ├── target-factory.ts         # Target initialization
+│   │   ├── providers/
+│   │   │   ├── openai-target.ts      # GPT-4 implementation
+│   │   │   ├── claude-target.ts      # Claude implementation
+│   │   │   ├── ollama-target.ts      # Local inference
+│   │   │   ├── control-target.ts     # Graph-aware router
+│   │   │   └── auto-target.ts        # Intelligent selection
+│   │   ├── artifact-creator.ts       # Artifact extraction
+│   │   ├── multi-ai-deliberation.ts  # Multi-AI comparison
+│   │   ├── entity-references.ts      # Reference parsing
+│   │   ├── global-search.ts          # Unified search
+│   │   ├── history-manager.ts        # Conversation history
+│   │   ├── preferences.ts            # User preferences
+│   │   ├── index.ts                  # Module exports
+│   │   └── __tests__/               # Comprehensive tests
+│   │       ├── integration.test.ts   # End-to-end testing
+│   │       ├── targets.test.ts       # Target capabilities
+│   │       └── advanced-features.test.ts
 │   ├── types/
-│   │   └── graph.ts           # Type definitions
+│   │   └── graph.ts                  # Type definitions (with Conversation types)
 │   └── scripts/
-│       ├── verify-graph.ts    # Graph verification
-│       └── full-demo.ts       # End-to-end demo
-└── mission-control/            # Agent daemon
-    └── data/                   # Graph state files
+│       ├── verify-graph.ts           # Graph verification
+│       └── full-demo.ts              # End-to-end demo
+└── mission-control/                  # Agent daemon
+    └── data/                         # Graph state files
 ```
 
 ## Configuration
@@ -347,6 +419,36 @@ const context = readFileSync("mission-control/data/ai-context.md", "utf-8");
 enrichedPrompt = basePrompt + "\n" + context;
 ```
 
+## Running Control Locally
+
+### Quick Start - One Command
+
+```bash
+# Development mode with all components
+./scripts/dev.sh
+```
+
+This single command:
+1. Sets up environment variables
+2. Starts the Tauri application
+3. Starts the Mission-Control daemon
+4. Initializes AI targets (Claude, GPT-4, Ollama)
+5. Opens the UI at http://localhost:3000
+
+### Manual Start (if preferred)
+
+**Terminal 1: Tauri Application**
+```bash
+npm run tauri dev
+# Opens desktop app
+```
+
+**Terminal 2: Mission-Control Daemon**
+```bash
+cd mission-control
+pnpm daemon:start
+```
+
 ## Production Deployment
 
 ### Environment Setup
@@ -356,6 +458,11 @@ export CONTROL_GRAPHS_PATH=/data/control/graphs
 
 # Set Tauri config
 export TAURI_CONFIG_PATH=./src-tauri/tauri.conf.json
+
+# AI Target Configuration (required for conversation layer)
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+# Ollama runs locally by default: http://localhost:11434
 ```
 
 ### Build for Distribution
@@ -372,6 +479,7 @@ npm run tauri build
 - **Disk space:** Minimum 500MB for graphs + application
 - **RAM:** 1GB minimum, 4GB recommended
 - **CPU:** Multi-core recommended for large projects
+- **Network:** Optional (Ollama works offline)
 
 ### Monitoring
 
@@ -384,6 +492,13 @@ pnpm daemon:status
 View recent activity:
 ```bash
 tail -f mission-control/logs/daemon.log
+```
+
+Check AI target availability:
+```bash
+# In browser console of Control app
+const registry = getTargetRegistry();
+console.log(registry.getAvailableTargets());
 ```
 
 ## Support & Troubleshooting
