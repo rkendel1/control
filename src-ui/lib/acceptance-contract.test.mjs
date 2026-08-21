@@ -70,6 +70,14 @@ test("task actions remain visible in the narrow intelligence rail",async()=>{
   assert.match(panel,/Restart data connection/);
 });
 
+test("startup restores a task whose durable Work committed before its Task record",async()=>{
+  const source=await read("./control-db.ts");
+  assert.match(source,/work\.kind!=="task"\|\|taskWorkIds\.has\(work\.id\)/);
+  assert.match(source,/id=`recovered-\$\{work\.id\}`/);
+  assert.match(source,/Restored interrupted task/);
+  assert.match(source,/tags:\["recovered"\]/);
+});
+
 test("the complete AI workspace expands and restores without unmounting its state",async()=>{
   const [workbench,panel,css]=await Promise.all([read("../components/Workbench.tsx"),read("../components/ControlPanel.tsx"),read("../components/Workbench.css")]);
   assert.match(panel,/↗ Expand/);assert.match(panel,/↙ Restore/);

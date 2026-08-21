@@ -586,7 +586,15 @@ export class ControlDatabase {
     async reconcileCanonicalGraph():Promise<{repairs:number;issues:number}>{
         let repairs=0,issues=0;const now=Date.now(),projects=new Set((await this.projects.all()).map(project=>project.id));
         const workStatus=(task:ControlTask):ControlWork["status"]=>task.status==="done"?"completed":task.status==="review"?"review":task.status==="awaiting-input"?"awaiting-input":task.status==="failed"?"failed":task.status==="in-progress"?"active":"captured";
-        const tasks=await this.tasks.all(),taskById=new Map(tasks.map(task=>[task.id,task]));
+        const taskStatus=(work:ControlWork):ControlTask["status"]=>work.status==="completed"?"done":work.status==="review"?"review":work.status==="awaiting-input"?"awaiting-input":work.status==="failed"?"failed":work.status==="active"?"in-progress":"not-started";
+        const tasks=await this.tasks.all(),taskById=new Map(tasks.map(task=>[task.id,task])),taskWorkIds=new Set(tasks.map(task=>task.workId));
+        for(const work of await this.works.all()){
+            if(work.kind!=="task"||taskWorkIds.has(work.id))continue;
+            if(!projects.has(work.projectId)){issues++;continue;}
+            const id=`recovered-${work.id}`,task:ControlTask={id,workId:work.id,projectId:work.projectId,title:work.title,description:work.intent||"",status:taskStatus(work),priority:"medium",urgency:"normal",tags:["recovered"],blockedBy:[],acceptanceCriteria:[],feedback:[],modelPreference:"auto",scope:"project",order:work.createdAt,createdAt:work.createdAt,updatedAt:now,completedAt:work.completedAt};
+            await this.tasks.insert(task,id);taskById.set(id,task);taskWorkIds.add(work.id);repairs++;
+            const activityId=createId("activity");await this.activity.insert({id:activityId,projectId:work.projectId,workId:work.id,taskId:id,type:"task_restored",actor:"system",summary:`Restored interrupted task: ${work.title}`,details:"Recovered from its durable Work record after task persistence was interrupted.",createdAt:now},activityId);
+        }
         for(const task of tasks){
             if(!projects.has(task.projectId)){issues++;continue;}
             const priorWork=task.workId?await this.works.get(task.workId):undefined;
