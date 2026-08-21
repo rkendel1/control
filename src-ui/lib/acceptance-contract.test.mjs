@@ -42,6 +42,9 @@ test("Build with AI creates canonical feature Work and opens the running task",a
   assert.match(builder,/cmd_task_attachment_write/);
   assert.match(builder,/Paste, drop, or choose up to 12 images/);
   assert.match(builder,/Reference screenshots/);
+  assert.match(builder,/Build a new project/);
+  assert.match(builder,/Desktop — default/);
+  assert.match(workbench,/cmd_project_create/);
   assert.match(builder,/Clarification is read-only/);
   assert.match(builder,/Approve plan & start building/);
   assert.match(builder,/cmd_agent_chat/);

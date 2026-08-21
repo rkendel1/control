@@ -88,6 +88,8 @@ export default function Workbench() {
   };
 
   const handleRemoveProject=async()=>{if(!currentProject)return;if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("This project has unsaved editor changes. Continue removing it from Control?"))return;if(!window.confirm(`Remove ${currentProject.name} from Control? Project files will not be deleted.`))return;const removed=await removeProject(currentProject.id);if(!removed)window.alert("Project could not be removed. Stop active work and try again.");};
+  const handleCreateAIProject=async(location:"desktop"|"documents",name:string)=>{const response=await invoke<string>("cmd_project_create",{location,name});if(!response.success||!response.data)throw new Error(response.error||"Could not create the project folder");if(!await addProject(response.data,name))throw new Error("The folder was created, but Control could not register the project");const record=(await getControlDatabase().projects.all()).find(project=>project.path===response.data);return record?{id:record.id,name:record.name,path:record.path,description:record.description,runtime:record.runtime}:undefined;};
+  const buildModal=buildingWithAI&&<BuildWithAI projects={projects} currentProjectId={currentProject?.id||""} onCreateProject={handleCreateAIProject} onClose={()=>setBuildingWithAI(false)} onStarted={()=>{setBuildingWithAI(false);setAgentExpanded(true);window.dispatchEvent(new CustomEvent("control-command",{detail:"start-agent"}));}}/>;
 
   useEffect(() => {
     const handleCommand=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="open-file")setQuickOpen(true);else if(command==="build-with-ai")setBuildingWithAI(true);else if(command==="switch-project"){document.querySelector<HTMLSelectElement>(".project-selector")?.focus();}else if(command==="open-project")void handleAddProject();else if(command==="toggle-terminal-size")setTerminalHeight(height=>height>400?220:Math.min(650,Math.round(window.innerHeight*.55)));};
@@ -137,21 +139,21 @@ export default function Workbench() {
 
   if (!currentProject) {
     return (
-      <div className="workbench-empty">
+      <>{buildModal}<div className="workbench-empty">
         <h2>No Projects</h2>
-        <p>Add or open a project to get started.</p>
+        <p>Open an existing project or describe a new one for Control Intelligence to build.</p>
         {error&&<div className="workbench-inline-error"><span>{error}</span><button onClick={clearError}>Dismiss</button></div>}
         {projectScan&&<div className={`workbench-scan-status ${projectScan.status}`}>{projectScan.message}</div>}
         <button className="header-action" onClick={() => void handleAddProject()}>
           Open Project
         </button>
-      </div>
+        <button className="header-build-ai" onClick={()=>setBuildingWithAI(true)}>✦ Build a new project with AI</button>
+      </div></>
     );
   }
 
   return (
-    <div className={`workbench ${agentExpanded?"ai-focus":""}`}>
-      {buildingWithAI&&<BuildWithAI projects={projects} currentProjectId={currentProject.id} onClose={()=>setBuildingWithAI(false)} onStarted={()=>{setBuildingWithAI(false);setAgentExpanded(true);window.dispatchEvent(new CustomEvent("control-command",{detail:"start-agent"}));}}/>}
+    <>{buildModal}<div className={`workbench ${agentExpanded?"ai-focus":""}`}>
       {quickOpen&&<QuickOpen tree={explorerTree} onOpen={openFile} onClose={()=>setQuickOpen(false)}/>} 
       {error&&<div className="workbench-error-banner"><span>{error}</span><button onClick={clearError}>Dismiss</button></div>}
       {projectNotice&&<div className="workbench-project-notice">{projectNotice}</div>}
@@ -248,6 +250,6 @@ export default function Workbench() {
           onMouseDown={() => setIsResizing("terminal")}
         />
       </div>
-    </div>
+    </div></>
   );
 }
