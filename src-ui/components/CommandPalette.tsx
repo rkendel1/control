@@ -27,6 +27,7 @@ export default function CommandPalette({
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const commands: Command[] = [
+    { id: "open-project", label: "Open Project", description: "Add a project folder", category: "Project", action: () => onCommand("open-project") },
     {
       id: "open-file",
       label: "Open File",
@@ -52,15 +53,15 @@ export default function CommandPalette({
     },
     {
       id: "start-agent",
-      label: "Start Agent",
-      description: "Start a coding agent run",
+      label: "Open Tasks",
+      description: "Open task triage to start or review agent work",
       category: "Agent",
       action: () => onCommand("start-agent"),
     },
     {
       id: "commit-changes",
-      label: "Commit Changes",
-      description: "Commit staged changes",
+      label: "Open Git Changes",
+      description: "Review, stage, and commit project changes",
       category: "Git",
       action: () => onCommand("commit-changes"),
     },
@@ -70,13 +71,7 @@ export default function CommandPalette({
       description: "Open a new terminal session",
       category: "Terminal",
       action: () => onCommand("new-terminal"),
-    },
-    {
-      id: "create-worktree",
-      label: "Create Worktree",
-      description: "Create a new git worktree",
-      category: "Workspace",
-      action: () => onCommand("create-worktree"),
+      shortcut: "Ctrl+`",
     },
     {
       id: "switch-project",

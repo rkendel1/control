@@ -76,3 +76,9 @@ impl From<git2::Error> for ControlError {
         Self::GitError(err.message().to_string())
     }
 }
+
+impl From<notify::Error> for ControlError {
+    fn from(err: notify::Error) -> Self {
+        Self::WorkspaceError(err.to_string())
+    }
+}

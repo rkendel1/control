@@ -45,6 +45,11 @@ export class SecretRedactor {
         pattern: /export\s+(OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY)=\S+/gi,
         replacement: "export [REDACTED_ENVIRONMENT_VARIABLE]",
       },
+      {
+        name: "Sensitive Environment Assignment",
+        pattern: /(?:^|\n)\s*(?:OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|DATABASE_URL|PRIVATE_KEY|ACCESS_TOKEN|REFRESH_TOKEN)\s*=\s*[^\s]+/gim,
+        replacement: "\n[REDACTED_ENVIRONMENT_VARIABLE]",
+      },
       // Git credentials
       {
         name: "Git URL with Credentials",
@@ -62,6 +67,16 @@ export class SecretRedactor {
         name: "AWS Access Key",
         pattern: /AKIA[0-9A-Z]{16}/g,
         replacement: "[REDACTED_AWS_KEY]",
+      },
+      {
+        name: "GitHub Token",
+        pattern: /(?:ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{20,}/g,
+        replacement: "[REDACTED_GITHUB_TOKEN]",
+      },
+      {
+        name: "JWT",
+        pattern: /eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}/g,
+        replacement: "[REDACTED_JWT]",
       },
       // Database connection strings
       {
@@ -108,7 +123,7 @@ export class SecretRedactor {
    * Useful for diagnostic purposes
    */
   containsSecrets(text: string): boolean {
-    return this.patterns.some((pattern) => pattern.pattern.test(text));
+    return this.patterns.some((pattern) => {pattern.pattern.lastIndex=0;return pattern.pattern.test(text);});
   }
 
   /**

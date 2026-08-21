@@ -4,6 +4,8 @@
   flex: 1;
   overflow: hidden;
 }
+.editor-conflict { display:flex; justify-content:space-between; gap:8px; padding:6px 10px; background:#5a3b16; color:#ffd89a; font-size:12px; }
+.editor-conflict button { background:transparent; border:1px solid #ba8c4a; color:inherit; cursor:pointer; }
 
 .editor-tabs {
   display: flex;

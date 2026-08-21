@@ -1,4 +1,4 @@
-name: CI
+name: Control desktop CI
 
 on:
   push:
@@ -7,36 +7,32 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mission-control
-
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: pnpm
-          cache-dependency-path: mission-control/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm tsc --noEmit
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Build
-        run: pnpm build
-
-      - name: Test
-        run: pnpm test
+          cache: npm
+          cache-dependency-path: src-ui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: src-ui
+      - name: Test UI and FeltDB contracts
+        run: npm test
+        working-directory: src-ui
+      - name: Build UI
+        run: npm run build
+        working-directory: src-ui
+      - name: Test native desktop
+        run: cargo test
+        working-directory: src-tauri

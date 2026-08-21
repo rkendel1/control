@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Control Workbench - Unified Startup Script
-# Starts all components for development: Tauri app, daemon, API server
+# Starts the native Tauri desktop application for development.
 
 set -e
 
@@ -28,94 +28,47 @@ echo -e "${BLUE}"
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║          Control Workbench - Unified Startup              ║"
 echo "║                                                            ║"
-echo "║  Starting all components:                                  ║"
-echo "║  • Tauri Application (Desktop UI)                          ║"
-echo "║  • Mission-Control Daemon (Agent Coordination)             ║"
-echo "║  • AI Targets (Claude, GPT-4, Ollama, Auto)                ║"
+echo "║  Native desktop · FeltDB · supervised agent runtimes       ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo -e "${NC}\n"
 
 # Validate expected project structure
-if [ ! -f "mission-control/package.json" ] || [ ! -f "src-ui/package.json" ] || [ ! -f "src-tauri/Cargo.toml" ]; then
+if [ ! -f "src-ui/package.json" ] || [ ! -f "src-tauri/Cargo.toml" ]; then
   echo -e "${RED}Error: Missing expected Control project files${NC}"
-  echo "Expected: mission-control/package.json, src-ui/package.json, src-tauri/Cargo.toml"
+  echo "Expected: src-ui/package.json and src-tauri/Cargo.toml"
   exit 1
 fi
 
 # Function to cleanup on exit
 cleanup() {
-  echo -e "\n${YELLOW}Shutting down services...${NC}"
-  # Daemon is managed by mission-control daemon scripts.
-  # We do not force-stop it here to avoid killing unrelated processes.
+  echo -e "\n${YELLOW}Control stopped.${NC}"
   exit 0
 }
 
 trap cleanup SIGINT SIGTERM
 
 # Check environment
-echo -e "${BLUE}[1/4]${NC} Checking environment..."
+echo -e "${BLUE}[1/3]${NC} Checking environment..."
 
 # Node.js version
 NODE_VERSION=$(node -v)
 echo "  ✓ Node.js: $NODE_VERSION"
 
-# pnpm availability
-if ! command -v pnpm &> /dev/null; then
-  echo -e "  ${RED}✗ pnpm not found${NC}"
-  echo "  Install with: npm install -g pnpm"
-  exit 1
-fi
-echo "  ✓ pnpm installed"
-
-# AI API Keys check (optional but warn if missing)
-if [ -z "$ANTHROPIC_API_KEY" ]; then
-  echo -e "  ${YELLOW}⚠ ANTHROPIC_API_KEY not set (Claude target will be unavailable)${NC}"
-else
-  echo -e "  ${GREEN}✓ ANTHROPIC_API_KEY configured${NC}"
-fi
-
-if [ -z "$OPENAI_API_KEY" ]; then
-  echo -e "  ${YELLOW}⚠ OPENAI_API_KEY not set (GPT-4 target will be unavailable)${NC}"
-else
-  echo -e "  ${GREEN}✓ OPENAI_API_KEY configured${NC}"
-fi
-
-echo -e "  ${YELLOW}ℹ Ollama: Will run locally (http://localhost:11434)${NC}"
+echo "  ✓ npm: $(npm -v)"
 
 # Install dependencies if needed
-echo -e "\n${BLUE}[2/4]${NC} Checking dependencies..."
-if [ ! -d "mission-control/node_modules" ]; then
-  echo "  Installing mission-control dependencies..."
-  (cd mission-control && pnpm install)
-fi
+echo -e "\n${BLUE}[2/3]${NC} Checking dependencies..."
 
 if [ ! -d "src-ui/node_modules" ]; then
   echo "  Installing src-ui dependencies..."
-  (cd src-ui && pnpm install)
+  (cd src-ui && npm ci)
 fi
 
 echo -e "  ${GREEN}✓ Dependencies ready${NC}"
 
-# Start Mission-Control Daemon (background)
-echo -e "\n${BLUE}[3/4]${NC} Starting Mission-Control Daemon..."
-# Start in background so unified startup can continue.
-(cd mission-control && pnpm daemon:start > /tmp/control-daemon-start.log 2>&1) &
-DAEMON_START_PID=$!
-sleep 2
-
-if (cd mission-control && pnpm daemon:status > /tmp/control-daemon-status.log 2>&1); then
-  echo -e "  ${GREEN}✓ Daemon started${NC}"
-else
-  echo -e "  ${YELLOW}⚠ Daemon status check failed (startup may still be in progress)${NC}"
-  echo -e "  ${YELLOW}  See /tmp/control-daemon-start.log and /tmp/control-daemon-status.log${NC}"
-fi
-
 # Start Tauri Application
-echo -e "\n${BLUE}[4/4]${NC} Starting Tauri Application..."
+echo -e "\n${BLUE}[3/3]${NC} Starting Tauri Application..."
 echo -e "  ${GREEN}✓ UI opening in a moment...${NC}\n"
-
-# Wait a bit for daemon to fully initialize
-sleep 1
 
 # Start dev mode
 if [ "$IS_WINDOWS" = true ]; then
@@ -132,7 +85,7 @@ else
   echo -e "  ${YELLOW}  Optional web fallback: CONTROL_WEB_FALLBACK=1 ./start.sh${NC}"
   if [ "${CONTROL_WEB_FALLBACK:-0}" = "1" ]; then
     echo -e "  ${YELLOW}ℹ Starting web fallback (no Tauri IPC)${NC}"
-    (cd src-ui && pnpm dev)
+    (cd src-ui && npm run dev)
   else
     exit 1
   fi

@@ -1,157 +1,26 @@
 "use client";
-
-import React, { useState } from "react";
-import { GitStatus } from "../types";
+import React,{useEffect,useState} from "react";
+import {invoke} from "../lib/tauri";
+import {GitStatus} from "../types";
 import DiffViewer from "./DiffViewer";
 import "./GitPanel.css";
 
-interface GitPanelProps {
-  gitStatus: GitStatus | null;
-}
-
-export default function GitPanel({ gitStatus }: GitPanelProps) {
-  const [activeTab, setActiveTab] = useState<"changes" | "staged" | "history">(
-    "changes"
-  );
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [commitMessage, setCommitMessage] = useState("");
-
-  if (!gitStatus) {
-    return (
-      <div className="git-panel">
-        <div className="git-empty">No git status available</div>
-      </div>
-    );
-  }
-
-  const unstagedFiles = Array.from(gitStatus.files.entries()).filter(
-    ([, status]) => !gitStatus.stagedFiles.has(Array.from(gitStatus.files.keys())[0])
-  );
-  const changedCount = gitStatus.files.size;
-  const stagedCount = gitStatus.stagedFiles.size;
-
-  return (
-    <div className="git-panel">
-      <div className="git-header">
-        <div className="git-branch">
-          <span className="branch-icon">🌿</span>
-          <span className="branch-name">{gitStatus.branch}</span>
-          {!gitStatus.isClean && <span className="modified-indicator">●</span>}
-        </div>
-        {(gitStatus.ahead > 0 || gitStatus.behind > 0) && (
-          <div className="git-tracking">
-            {gitStatus.ahead > 0 && (
-              <span className="ahead">↑ {gitStatus.ahead}</span>
-            )}
-            {gitStatus.behind > 0 && (
-              <span className="behind">↓ {gitStatus.behind}</span>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="git-tabs">
-        <button
-          className={`git-tab ${activeTab === "changes" ? "active" : ""}`}
-          onClick={() => setActiveTab("changes")}
-        >
-          Changes <span className="badge">{changedCount}</span>
-        </button>
-        <button
-          className={`git-tab ${activeTab === "staged" ? "active" : ""}`}
-          onClick={() => setActiveTab("staged")}
-        >
-          Staged <span className="badge">{stagedCount}</span>
-        </button>
-        <button
-          className={`git-tab ${activeTab === "history" ? "active" : ""}`}
-          onClick={() => setActiveTab("history")}
-        >
-          History
-        </button>
-      </div>
-
-      <div className="git-content">
-        {activeTab === "changes" && (
-          <div className="changes-section">
-            {gitStatus.files.size === 0 ? (
-              <div className="empty">No changes</div>
-            ) : (
-              <div className="changes-list">
-                {Array.from(gitStatus.files.entries()).map(([path, status]) => (
-                  <div
-                    key={path}
-                    className={`change-item status-${status.status}`}
-                    onClick={() => setSelectedFile(path)}
-                  >
-                    <span className="status-badge">{status.status}</span>
-                    <span className="file-path">{path}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "staged" && (
-          <div className="staged-section">
-            {gitStatus.stagedFiles.size === 0 ? (
-              <div className="empty">No staged files</div>
-            ) : (
-              <div className="staged-list">
-                {Array.from(gitStatus.stagedFiles).map((path) => (
-                  <div key={path} className="staged-item">
-                    <span className="checkmark">✓</span>
-                    <span className="file-path">{path}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {gitStatus.stagedFiles.size > 0 && (
-              <div className="commit-section">
-                <textarea
-                  className="commit-message"
-                  placeholder="Write commit message..."
-                  value={commitMessage}
-                  onChange={(e) => setCommitMessage(e.target.value)}
-                />
-                <button className="commit-button">Commit</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "history" && (
-          <div className="history-section">
-            <div className="commit-item">
-              <span className="commit-hash">a91d2f4</span>
-              <span className="commit-message">Recent changes</span>
-              <span className="commit-time">2 hours ago</span>
-            </div>
-            <div className="commit-item">
-              <span className="commit-hash">b71a91c</span>
-              <span className="commit-message">Initial setup</span>
-              <span className="commit-time">1 day ago</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {selectedFile && (
-        <div className="diff-viewer-modal">
-          <div className="modal-header">
-            <span>{selectedFile}</span>
-            <button
-              className="close-button"
-              onClick={() => setSelectedFile(null)}
-            >
-              ×
-            </button>
-          </div>
-          <DiffViewer filePath={selectedFile} />
-        </div>
-      )}
-    </div>
-  );
+type Commit={hash:string;short_hash:string;message:string;author:string;timestamp:number};
+export default function GitPanel({gitStatus,workspacePath,onRefresh}:{gitStatus:GitStatus|null;workspacePath?:string;onRefresh:()=>void}){
+ const [tab,setTab]=useState<"changes"|"staged"|"history">("changes"),[selected,setSelected]=useState<string>(),[patch,setPatch]=useState(""),[message,setMessage]=useState(""),[history,setHistory]=useState<Commit[]>([]),[branches,setBranches]=useState<string[]>([]),[busy,setBusy]=useState<string>(),[error,setError]=useState<string>();
+ const staged=gitStatus?Array.from(gitStatus.stagedFiles):[], changes=gitStatus?Array.from(gitStatus.files.entries()).filter(([path,status])=>!gitStatus.stagedFiles.has(path)||status.hasWorktreeChanges):[];
+ useEffect(()=>{if(tab==="history"&&workspacePath)void invoke<Commit[]>("cmd_git_history",{workspacePath}).then(r=>r.success&&setHistory(r.data||[]));},[tab,workspacePath]);
+ useEffect(()=>{if(workspacePath)void invoke<string[]>("cmd_git_branches",{workspacePath}).then(response=>response.success&&setBranches(response.data||[]));},[workspacePath,gitStatus?.branch]);
+ const showDiff=async(path:string,isStaged:boolean)=>{if(!workspacePath)return;setSelected(path);const r=await invoke<string>("cmd_git_diff",{workspacePath,filePath:path,staged:isStaged});if(r.success)setPatch(r.data||"");else setError(r.error);};
+ const stage=async(path:string)=>{if(!workspacePath)return;const r=await invoke("cmd_git_stage",{workspacePath,filePath:path});if(!r.success)setError(r.error);onRefresh();};
+ const unstage=async(path:string)=>{if(!workspacePath)return;const r=await invoke("cmd_git_unstage",{workspacePath,filePath:path});if(!r.success)setError(r.error);onRefresh();};
+ const commit=async()=>{if(!workspacePath||!message.trim())return;const r=await invoke<string>("cmd_git_commit",{workspacePath,message:message.trim()});if(r.success){setMessage("");onRefresh();}else setError(r.error);};
+ const sync=async(action:"fetch"|"pull"|"push")=>{if(!workspacePath||busy)return;setBusy(action);setError(undefined);const response=await invoke<string>("cmd_git_sync",{workspacePath,action});if(!response.success)setError(response.error);onRefresh();setBusy(undefined);};
+ const switchBranch=async(branch:string,create=false)=>{if(!workspacePath||!branch||busy)return;setBusy("branch");setError(undefined);const response=await invoke<string>("cmd_git_switch_branch",{workspacePath,branch,create});if(!response.success)setError(response.error);else onRefresh();setBusy(undefined);};
+ if(!gitStatus)return <div className="git-panel"><div className="git-empty">Not a Git repository</div></div>;
+ return <div className="git-panel"><div className="git-header"><div className="git-branch">🌿 <select value={gitStatus.branch} onChange={event=>void switchBranch(event.target.value)} disabled={!!busy}>{branches.map(branch=><option key={branch}>{branch}</option>)}</select>{!gitStatus.isClean&&<span className="modified-indicator">●</span>}<span>{gitStatus.ahead?`↑${gitStatus.ahead}`:""}{gitStatus.behind?` ↓${gitStatus.behind}`:""}</span></div><div className="decision-options"><button disabled={!!busy} onClick={()=>void sync("fetch")}>Fetch</button><button disabled={!!busy} onClick={()=>void sync("pull")}>Pull</button><button disabled={!!busy} onClick={()=>void sync("push")}>Push</button><button disabled={!!busy} onClick={()=>{const branch=window.prompt("New branch name")?.trim();if(branch)void switchBranch(branch,true);}}>+ Branch</button></div></div><div className="git-tabs"><button className={tab==="changes"?"git-tab active":"git-tab"} onClick={()=>setTab("changes")}>Changes <span className="badge">{changes.length}</span></button><button className={tab==="staged"?"git-tab active":"git-tab"} onClick={()=>setTab("staged")}>Staged <span className="badge">{staged.length}</span></button><button className={tab==="history"?"git-tab active":"git-tab"} onClick={()=>setTab("history")}>History</button></div>{error&&<div className="tasks-error">{error}</div>}<div className="git-content">
+ {tab==="changes"&&(changes.length?changes.map(([path,status])=><div className="change-item" key={path}><span className="status-badge">{status.status}</span><span className="file-path" onClick={()=>void showDiff(path,false)}>{path}</span><button onClick={()=>void stage(path)}>+</button></div>):<div className="empty">No unstaged changes</div>)}
+ {tab==="staged"&&<><div>{staged.length?staged.map(path=><div className="change-item" key={path}><span className="checkmark">✓</span><span className="file-path" onClick={()=>void showDiff(path,true)}>{path}</span><button onClick={()=>void unstage(path)}>−</button></div>):<div className="empty">No staged files</div>}</div>{staged.length>0&&<div className="commit-section"><textarea className="commit-message" placeholder="Commit message…" value={message} onChange={e=>setMessage(e.target.value)}/><button className="commit-button" disabled={!message.trim()} onClick={()=>void commit()}>Commit</button></div>}</>}
+ {tab==="history"&&(history.length?history.map(commit=><div className="commit-item" key={commit.hash}><span className="commit-hash">{commit.short_hash}</span><span className="commit-message">{commit.message}</span><span className="commit-time">{commit.author} · {new Date(commit.timestamp*1000).toLocaleDateString()}</span></div>):<div className="empty">No commits</div>)}
+ </div>{selected&&<div className="diff-viewer-modal"><div className="modal-header"><span>{selected}</span><button className="close-button" onClick={()=>setSelected(undefined)}>×</button></div><DiffViewer patch={patch}/></div>}</div>;
 }

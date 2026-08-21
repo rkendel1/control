@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useRef, forwardRef, useCallback } from "react";
+import React, { useRef, forwardRef, useCallback,useEffect } from "react";
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { Workspace } from "../types";
 import "./MonacoEditor.css";
+import {applyEditorTarget,type EditorNavigationTarget} from "../lib/editor-navigation";
 
 interface MonacoEditorProps {
   path: string;
@@ -11,10 +12,11 @@ interface MonacoEditorProps {
   content: string;
   onChange: (content: string) => void;
   onSave: () => void;
+  targetPosition?:EditorNavigationTarget;
 }
 
 const MonacoEditor = forwardRef<HTMLDivElement, MonacoEditorProps>(
-  ({ path, workspace, content, onChange, onSave }, ref) => {
+  ({ path, workspace, content, onChange, onSave,targetPosition }, ref) => {
     const monaco = useMonaco();
     const editorRef = useRef<any>(null);
 
@@ -44,11 +46,14 @@ const MonacoEditor = forwardRef<HTMLDivElement, MonacoEditorProps>(
 
     const handleEditorDidMount = (editor: any) => {
       editorRef.current = editor;
-      editor.addCommand(
-        monaco?.KeyMod.CtrlCmd | monaco?.KeyCode.KeyS,
-        onSave
-      );
+      const ctrlCmd = monaco?.KeyMod.CtrlCmd;
+      const keyS = monaco?.KeyCode.KeyS;
+      if (ctrlCmd !== undefined && keyS !== undefined) {
+        editor.addCommand(ctrlCmd | keyS, onSave);
+      }
+      applyEditorTarget(editor,targetPosition);
     };
+    useEffect(()=>applyEditorTarget(editorRef.current,targetPosition),[path,targetPosition?.line,targetPosition?.column,targetPosition?.revision]);
 
     const handleChange = useCallback(
       (value: string | undefined) => {

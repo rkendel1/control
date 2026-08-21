@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.rkendel1.control",
   "build": {
-    "beforeDevCommand": "cd src-ui && pnpm dev",
-    "beforeBuildCommand": "cd src-ui && pnpm build",
+    "beforeDevCommand": "npm --prefix src-ui run dev",
+    "beforeBuildCommand": "npm --prefix src-ui run build",
     "devUrl": "http://localhost:5173",
-    "frontendDist": "src-ui/dist"
+    "frontendDist": "dist"
   },
   "app": {
     "windows": [
@@ -15,6 +15,7 @@
         "title": "Control",
         "width": 1400,
         "height": 900,
+        "center": true,
         "resizable": true
       }
     ],
@@ -23,6 +24,8 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "icon": ["icons/icon.png"],
+    "targets": ["app"]
   }
 }

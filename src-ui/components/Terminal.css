@@ -31,6 +31,8 @@
   transition: all 0.1s;
   white-space: nowrap;
 }
+.terminal-tab-close { margin-left:7px; opacity:.6; }
+.terminal-tab-close:hover { opacity:1; color:#ff9b9b; }
 
 .terminal-tab:hover {
   background: #464646;
@@ -55,6 +57,50 @@
 
 .terminal-new-button:hover {
   color: #e0e0e0;
+}
+
+.terminal-cwd {
+  margin-left: auto;
+  color: #858585;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-stop {
+  background: #333;
+  border: 1px solid #555;
+  color: #ccc;
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.terminal-xterm {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 6px;
+}
+
+.terminal-xterm .xterm {
+  height: 100%;
+}
+
+.terminal-error {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 8px;
+  background: #5a2020;
+  color: #ffd8d8;
+  font-size: 11px;
+}
+
+.terminal-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 
 .terminal-output {

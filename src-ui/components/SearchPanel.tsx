@@ -14,9 +14,10 @@ interface SearchResult {
 interface SearchPanelProps {
   workspacePath?: string;
   onResultClick: (file: string, line: number) => void;
+  includeGenerated:boolean;
 }
 
-export default function SearchPanel({ workspacePath, onResultClick }: SearchPanelProps) {
+export default function SearchPanel({ workspacePath, onResultClick,includeGenerated }: SearchPanelProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -39,6 +40,10 @@ export default function SearchPanel({ workspacePath, onResultClick }: SearchPane
           workspacePath,
           pattern: searchTerm,
           includePatterns: null,
+          caseSensitive,
+          wholeWord,
+          useRegex: regex,
+          includeGenerated,
         });
 
         if (response.success && response.data) {
@@ -61,7 +66,7 @@ export default function SearchPanel({ workspacePath, onResultClick }: SearchPane
         setIsSearching(false);
       }
     },
-    [workspacePath]
+    [workspacePath, caseSensitive, wholeWord, regex,includeGenerated]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

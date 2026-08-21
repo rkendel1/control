@@ -5,11 +5,19 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useWorkspace } from "../hooks/useWorkspace";
 import Sidebar from "./Sidebar";
 import EditorArea from "./EditorArea";
-import AgentPanel from "./AgentPanel";
+import CoordinationPanel from "./CoordinationPanel";
 import Terminal from "./Terminal";
 import "./Workbench.css";
+import { useRunEvents } from "../hooks/useRunEvents";
+import { useRunRecovery } from "../hooks/useRunRecovery";
+import { useChatRunEvents } from "../hooks/useChatRunEvents";
+import { getControlDatabase } from "../lib/control-db";
+import QuickOpen from "./QuickOpen";
 
 export default function Workbench() {
+  useRunEvents();
+  useChatRunEvents();
+  useRunRecovery();
   const {
     projects,
     currentProject,
@@ -17,24 +25,36 @@ export default function Workbench() {
     workspaceState,
     gitStatus,
     explorerTree,
+    showGeneratedFiles,
+    setShowGeneratedFiles,
     isLoading,
     error,
+    clearError,
     switchProject,
     openFile,
     closeFile,
     saveFile,
     setFileModified,
     addProject,
+    removeProject,
+    loadGitStatus,
+    loadExplorerTree,
   } = useWorkspace();
 
   const [sidebarWidth, setSidebarWidth] = useState(250);
   const [agentPanelWidth, setAgentPanelWidth] = useState(280);
   const [terminalHeight, setTerminalHeight] = useState(200);
+  const [layoutLoaded,setLayoutLoaded]=useState(false);
+  const [quickOpen,setQuickOpen]=useState(false);
   const [isResizing, setIsResizing] = useState<
     "sidebar" | "agent" | "terminal" | null
   >(null);
 
+  useEffect(()=>{void getControlDatabase().settings.get("workspace").then(settings=>{if(settings){setSidebarWidth(settings.layout.sidebarWidth);setAgentPanelWidth(settings.layout.agentPanelWidth);setTerminalHeight(settings.layout.terminalHeight);}setLayoutLoaded(true);});},[]);
+  useEffect(()=>{if(!layoutLoaded)return;const timer=window.setTimeout(()=>{const database=getControlDatabase();void database.settings.get("workspace").then(settings=>settings&&database.settings.update("workspace",{layout:{sidebarWidth,agentPanelWidth,terminalHeight},updatedAt:Date.now()}));},250);return()=>window.clearTimeout(timer);},[layoutLoaded,sidebarWidth,agentPanelWidth,terminalHeight]);
+
   const handleAddProject = async () => {
+    if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("Switch projects with unsaved editor changes? Recovery drafts are retained unless they contain sensitive data."))return;
     let path: string | null = null;
 
     try {
@@ -57,6 +77,13 @@ export default function Workbench() {
       window.alert("Failed to add project. Check the path and try again.");
     }
   };
+
+  const handleRemoveProject=async()=>{if(!currentProject)return;if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("This project has unsaved editor changes. Continue removing it from Control?"))return;if(!window.confirm(`Remove ${currentProject.name} from Control? Project files will not be deleted.`))return;const removed=await removeProject(currentProject.id);if(!removed)window.alert("Project could not be removed. Stop active work and try again.");};
+
+  useEffect(() => {
+    const handleCommand=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="open-file")setQuickOpen(true);else if(command==="switch-project"){document.querySelector<HTMLSelectElement>(".project-selector")?.focus();}else if(command==="open-project")void handleAddProject();};
+    window.addEventListener("control-command",handleCommand);return()=>window.removeEventListener("control-command",handleCommand);
+  },[openFile]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -97,26 +124,23 @@ export default function Workbench() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="workbench-error">
-        <h2>Error</h2>
-        <p>{error}</p>
-      </div>
-    );
-  }
-
   if (!currentProject) {
     return (
       <div className="workbench-empty">
         <h2>No Projects</h2>
         <p>Add or open a project to get started.</p>
+        {error&&<div className="workbench-inline-error"><span>{error}</span><button onClick={clearError}>Dismiss</button></div>}
+        <button className="header-action" onClick={() => void handleAddProject()}>
+          Open Project
+        </button>
       </div>
     );
   }
 
   return (
     <div className="workbench">
+      {quickOpen&&<QuickOpen tree={explorerTree} onOpen={openFile} onClose={()=>setQuickOpen(false)}/>} 
+      {error&&<div className="workbench-error-banner"><span>{error}</span><button onClick={clearError}>Dismiss</button></div>}
       {/* Header */}
       <header className="workbench-header">
         <div className="header-left">
@@ -124,7 +148,7 @@ export default function Workbench() {
           <select
             className="project-selector"
             value={currentProject.id}
-            onChange={(e) => switchProject(e.target.value)}
+            onChange={(e) => {if(Array.from(workspaceState.openFiles.values()).some(file=>file.isDirty)&&!window.confirm("Switch projects with unsaved editor changes? Recovery drafts are retained unless they contain sensitive data.")){e.currentTarget.value=currentProject.id;return;}void switchProject(e.target.value);}}
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -136,6 +160,9 @@ export default function Workbench() {
         <div className="header-right">
           <button className="header-action" onClick={() => void handleAddProject()}>
             Open Project
+          </button>
+          <button className="header-action" onClick={() => void handleRemoveProject()} title="Remove from Control without deleting files">
+            Remove
           </button>
           <span className="git-info">
             {gitStatus?.branch && `${gitStatus.branch}`}
@@ -159,6 +186,10 @@ export default function Workbench() {
             projects={projects}
             currentProject={currentProject}
             currentWorkspace={currentWorkspace}
+            onGitRefresh={loadGitStatus}
+            onExplorerRefresh={loadExplorerTree}
+            showGeneratedFiles={showGeneratedFiles}
+            onShowGeneratedFilesChange={setShowGeneratedFiles}
           />
           <div
             className="resize-handle resize-handle-right"
@@ -176,6 +207,7 @@ export default function Workbench() {
             onFileSave={saveFile}
             onFileModified={setFileModified}
             onFileOpen={openFile}
+            targetPosition={workspaceState.scrollPositions.get(workspaceState.activeFileId||"")}
           />
         </div>
 
@@ -184,7 +216,7 @@ export default function Workbench() {
           className="agent-panel-container"
           style={{ width: `${agentPanelWidth}px` }}
         >
-          <AgentPanel />
+          <CoordinationPanel project={currentProject} />
           <div
             className="resize-handle resize-handle-left"
             onMouseDown={() => setIsResizing("agent")}

@@ -1,0 +1,49 @@
+.coordination-panel { display: flex; flex-direction: column; height: 100%; background: #1e1e1e; color: #ddd; min-width: 0; }
+.coordination-tabs { display: flex; border-bottom: 1px solid #333; overflow-x: auto; }
+.coordination-tabs button { flex: 0 0 auto; min-width: 58px; padding: 9px 6px; border: 0; background: #252526; color: #999; text-transform: capitalize; cursor: pointer; }
+.coordination-tabs button.active { color: white; border-bottom: 2px solid #4da3ff; }
+.coordination-error { padding: 8px 10px; color: #ffb4b4; background: #4a2020; font-size: 12px; white-space: pre-wrap; }
+.chat-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.conversation-toolbar { display: flex; gap: 6px; padding: 8px; }
+.conversation-toolbar select { min-width: 0; flex: 1; background: #2d2d30; color: #ddd; border: 1px solid #444; padding: 5px; }
+.conversation-toolbar button, .chat-input button, .decision-options button { background: #0e639c; border: 0; color: white; padding: 6px 10px; cursor: pointer; }
+.conversation-context { padding: 0 10px 7px; color: #888; font-size: 11px; }
+.message-list { flex: 1; min-height: 0; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 9px; }
+.message { padding: 8px 9px; border-radius: 5px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; }
+.message.user { align-self: flex-end; background: #174d70; max-width: 90%; }
+.message.assistant { background: #2a2a2d; border: 1px solid #39393d; }
+.message.pending { opacity: .7; }
+.message.failed { border: 1px solid #9a4545; }
+.message-failure { display: flex; justify-content: space-between; gap: 8px; color: #ffb4b4; font-size: 10px; margin-top: 6px; }
+.message-failure button { border: 1px solid #a55; background: #542727; color: white; cursor: pointer; }
+.message-sender { display: block; color: #8fc7ed; font-size: 10px; margin-bottom: 4px; text-transform: capitalize; }
+.message-status { color: #aaa; font-size: 12px; font-style: italic; }
+.chat-input { border-top: 1px solid #333; padding: 8px; display: grid; gap: 6px; }
+.chat-input textarea { min-height: 58px; resize: vertical; background: #252526; border: 1px solid #444; color: white; padding: 7px; font: inherit; }
+.chat-input button:disabled { opacity: .45; cursor: default; }
+.agent-list, .decision-list { overflow: auto; padding: 9px; display: grid; gap: 8px; }
+.agent-card, .decision-card { border: 1px solid #383838; background: #252526; padding: 9px; border-radius: 4px; }
+.run-card { cursor: pointer; }
+.run-card.selected { border-color: #3978a8; }
+.run-timeline { display: grid; gap: 5px; margin: 7px 0; border-left: 2px solid #3d566b; padding-left: 7px; }
+.run-event { color: #aaa; font-size: 10px; overflow-wrap: anywhere; }
+.run-event > span { color: #7fb9df; text-transform: capitalize; }
+.run-event > div { margin-top: 2px; white-space: pre-wrap; max-height: 110px; overflow: auto; }
+.run-artifacts { display: grid; gap: 4px; margin: 7px 0; }
+.run-artifact-heading { color: #8fc7ed; font-size: 10px; text-transform: uppercase; margin-top: 3px; }
+.run-change { display: flex; justify-content: space-between; gap: 5px; text-align: left; border: 0; background: #202a31; color: #ddd; padding: 4px 5px; cursor: pointer; overflow: hidden; }
+.run-change span { overflow: hidden; text-overflow: ellipsis; }
+.run-change small, .run-test small { color: #888; }
+.run-test { display: grid; gap: 2px; border-left: 3px solid #888; background: #202124; padding: 4px 6px; font-size: 10px; }
+.run-test.passed { border-color: #52a852; }.run-test.failed { border-color: #d65b5b; }.run-test.skipped { border-color: #b79545; }
+.run-artifact-empty { color: #777; font-size: 10px; font-style: italic; }
+.agent-card-title { display: flex; justify-content: space-between; gap: 8px; }
+.agent-card p, .decision-card p { color: #aaa; font-size: 12px; margin: 6px 0; }
+.agent-state { color: #7dcc7d; font-size: 10px; text-transform: uppercase; }
+.capabilities, .decision-answer { color: #888; font-size: 10px; }
+.run-summary { max-height: 150px; overflow: auto; white-space: pre-wrap; font-size: 11px; color: #bbb; background: #1d1d1f; padding: 6px; }
+.agent-directory-label { color: #888; font-size: 10px; text-transform: uppercase; margin-top: 8px; }
+.agent-card button { margin-top: 7px; background: #6b3030; color: white; border: 1px solid #965050; padding: 4px 8px; cursor: pointer; }
+.decision-options { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.decision-options button { font-size: 11px; }
+.coordination-empty { color: #888; padding: 20px; text-align: center; }

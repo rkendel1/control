@@ -9,6 +9,27 @@
     Ubuntu, Cantarell, sans-serif;
 }
 
+.workbench-error-banner {
+  position: absolute;
+  z-index: 100;
+  top: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(720px, calc(100% - 32px));
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 9px 12px;
+  color: #ffd4d4;
+  background: #502629;
+  border: 1px solid #8f454b;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px #0008;
+}
+
+.workbench-error-banner button,.workbench-inline-error button { margin-left: auto; }
+.workbench-inline-error { display:flex;gap:16px;align-items:center;color:#ffb4b4;margin:12px 0; }
+
 .workbench-header {
   display: flex;
   justify-content: space-between;

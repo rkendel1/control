@@ -59,8 +59,12 @@ impl FileManager {
     }
 
     /// Build explorer tree structure
-    pub async fn build_tree(&self, max_depth: usize) -> Result<Vec<TreeNode>> {
-        self.build_tree_recursive_sync(&self.workspace_root, 0, max_depth)
+    pub async fn build_tree(
+        &self,
+        max_depth: usize,
+        include_generated: bool,
+    ) -> Result<Vec<TreeNode>> {
+        self.build_tree_recursive_sync(&self.workspace_root, 0, max_depth, include_generated)
     }
 
     fn build_tree_recursive_sync(
@@ -68,6 +72,7 @@ impl FileManager {
         path: &Path,
         depth: usize,
         max_depth: usize,
+        include_generated: bool,
     ) -> Result<Vec<TreeNode>> {
         if depth > max_depth {
             return Ok(Vec::new());
@@ -82,9 +87,9 @@ impl FileManager {
             let file_name = entry.file_name();
             let entry_path = entry.path();
 
-            // Skip hidden files and common unimportant directories
+            // Skip generated/vendor directories, but keep project dotfiles visible.
             let name_str = file_name.to_string_lossy();
-            if name_str.starts_with('.') || self.should_ignore(&name_str) {
+            if !include_generated && self.should_ignore(&name_str) {
                 continue;
             }
 
@@ -93,9 +98,14 @@ impl FileManager {
                 .unwrap_or(&entry_path);
 
             if file_type.is_dir() {
-                let children = if depth < max_depth - 1 {
-                    self.build_tree_recursive_sync(&entry_path, depth + 1, max_depth)
-                        .unwrap_or_default()
+                let children = if depth < max_depth {
+                    self.build_tree_recursive_sync(
+                        &entry_path,
+                        depth + 1,
+                        max_depth,
+                        include_generated,
+                    )
+                    .unwrap_or_default()
                 } else {
                     Vec::new()
                 };
@@ -105,7 +115,11 @@ impl FileManager {
                     path: relative.to_string_lossy().to_string(),
                     name: name_str.to_string(),
                     is_dir: true,
-                    children: if children.is_empty() { None } else { Some(children) },
+                    children: if children.is_empty() {
+                        None
+                    } else {
+                        Some(children)
+                    },
                 });
             } else {
                 nodes.push(TreeNode {
@@ -132,17 +146,37 @@ impl FileManager {
 
     /// Resolve and validate path (security check)
     fn resolve_path(&self, relative_path: &str) -> Result<PathBuf> {
-        let path = self.workspace_root.join(relative_path);
-        let canonical = path.canonicalize().unwrap_or(path);
-
-        // Ensure path is within workspace
-        if !canonical.starts_with(&self.workspace_root.canonicalize().unwrap_or_else(|_| self.workspace_root.clone())) {
+        let relative = Path::new(relative_path);
+        if relative.is_absolute()
+            || relative.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
             return Err(crate::error::ControlError::workspace_error(
                 "Path escapes workspace boundary",
             ));
         }
-
-        Ok(canonical)
+        let root = self
+            .workspace_root
+            .canonicalize()
+            .map_err(|_| crate::error::ControlError::workspace_error("Workspace is unavailable"))?;
+        let path = root.join(relative);
+        let boundary = if path.exists() {
+            path.canonicalize()?
+        } else {
+            path.parent().unwrap_or(&root).canonicalize()?
+        };
+        if !boundary.starts_with(&root) {
+            return Err(crate::error::ControlError::workspace_error(
+                "Path escapes workspace boundary",
+            ));
+        }
+        Ok(path)
     }
 
     fn should_ignore(&self, name: &str) -> bool {
@@ -151,10 +185,8 @@ impl FileManager {
             "node_modules"
                 | "target"
                 | ".git"
-                | ".github"
                 | "dist"
                 | "build"
-                | ".vscode"
                 | ".idea"
                 | "__pycache__"
                 | ".pytest_cache"
@@ -181,4 +213,50 @@ pub struct TreeNode {
     pub is_dir: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<TreeNode>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn explorer_shows_dotfiles_and_can_include_generated_directories() {
+        let root = std::env::temp_dir().join(format!("control-files-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("src/deep")).expect("source tree");
+        std::fs::create_dir_all(root.join("node_modules/pkg")).expect("generated tree");
+        std::fs::write(root.join(".env.example"), "VALUE=1\n").expect("dotfile");
+        std::fs::write(root.join("src/deep/file.ts"), "export {};\n").expect("deep file");
+        std::fs::write(
+            root.join("node_modules/pkg/index.js"),
+            "module.exports={};\n",
+        )
+        .expect("generated file");
+        let manager = FileManager::new(&root);
+        let normal = manager.build_tree(64, false).await.expect("normal tree");
+        assert!(normal.iter().any(|node| node.name == ".env.example"));
+        assert!(!normal.iter().any(|node| node.name == "node_modules"));
+        let all = manager.build_tree(64, true).await.expect("complete tree");
+        assert!(all.iter().any(|node| node.name == "node_modules"));
+        assert_eq!(
+            manager.read("src/deep/file.ts").await.expect("read"),
+            "export {};\n"
+        );
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn file_access_cannot_escape_the_workspace() {
+        let root = std::env::temp_dir().join(format!("control-boundary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("workspace");
+        let outside = root.parent().expect("parent").join("outside.txt");
+        std::fs::write(&outside, "secret").expect("outside fixture");
+        let manager = FileManager::new(&root);
+        assert!(manager.read("../outside.txt").await.is_err());
+        assert!(manager
+            .write("../created-outside.txt", "bad")
+            .await
+            .is_err());
+        std::fs::remove_dir_all(root).expect("remove fixture");
+        std::fs::remove_file(outside).expect("remove outside fixture");
+    }
 }

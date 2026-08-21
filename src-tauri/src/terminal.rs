@@ -27,7 +27,10 @@ impl TerminalManager {
     /// Create a new terminal session
     pub async fn create_session(&self, name: String, cwd: String) -> Result<String> {
         let id = format!("term-{}", uuid::Uuid::new_v4());
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        #[cfg(unix)]
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        #[cfg(windows)]
+        let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
 
         let session = TerminalSession {
             id: id.clone(),
@@ -47,19 +50,32 @@ impl TerminalManager {
     /// Execute command in terminal
     pub async fn execute_command(
         &self,
-        session_id: &str,
+        _session_id: &str,
         command: &str,
         cwd: &str,
     ) -> Result<String> {
-        // Parse command
-        let parts: Vec<&str> = command.split_whitespace().collect();
-        if parts.is_empty() {
+        if command.trim().is_empty() {
             return Ok(String::new());
         }
 
-        let output = Command::new(parts[0])
-            .args(&parts[1..])
-            .current_dir(cwd)
+        let workspace = std::path::Path::new(cwd).canonicalize().map_err(|error| {
+            crate::error::ControlError::workspace_error(format!(
+                "Invalid terminal directory '{}': {}",
+                cwd, error
+            ))
+        })?;
+        #[cfg(unix)]
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        #[cfg(windows)]
+        let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+        let mut process = Command::new(shell);
+        #[cfg(unix)]
+        process.arg("-lc");
+        #[cfg(windows)]
+        process.arg("/C");
+        let output = process
+            .arg(command)
+            .current_dir(workspace)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()?;
@@ -69,7 +85,11 @@ impl TerminalManager {
 
         let mut result = stdout;
         if !stderr.is_empty() {
-            result.push_str(&format!("Error: {}", stderr));
+            result.push_str(&stderr);
+        }
+
+        if !output.status.success() && result.is_empty() {
+            result = format!("Command exited with status {}", output.status);
         }
 
         Ok(result)
@@ -83,7 +103,9 @@ impl TerminalManager {
                 return Ok(session.history.clone());
             }
         }
-        Err(crate::error::ControlError::workspace_error("Session not found"))
+        Err(crate::error::ControlError::workspace_error(
+            "Session not found",
+        ))
     }
 
     /// Add to session history
@@ -99,7 +121,9 @@ impl TerminalManager {
                 return Ok(());
             }
         }
-        Err(crate::error::ControlError::workspace_error("Session not found"))
+        Err(crate::error::ControlError::workspace_error(
+            "Session not found",
+        ))
     }
 }
 

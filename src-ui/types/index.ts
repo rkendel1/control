@@ -25,7 +25,7 @@ export interface WorkspaceState {
   activeFileId?: string;
   terminals: Map<string, TerminalSession>;
   activeTerminalId?: string;
-  scrollPositions: Map<string, { line: number; column: number }>;
+  scrollPositions: Map<string, { line: number; column: number; revision?:number }>;
 }
 
 export interface EditorTab {
@@ -51,6 +51,7 @@ export interface GitFileStatus {
   status: "M" | "A" | "D" | "R" | "C" | "?";
   stagedStatus?: "M" | "A" | "D" | "R" | "C";
   isConflicted: boolean;
+  hasWorktreeChanges?:boolean;
 }
 
 export interface GitStatus {

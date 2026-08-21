@@ -10,34 +10,25 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      const modifier=e.metaKey||e.ctrlKey,key=e.key.toLowerCase();
+      if (modifier && (key === "k" || (e.shiftKey && key === "p"))) {
         e.preventDefault();
-        setIsCommandPaletteOpen(!isCommandPaletteOpen);
+        setIsCommandPaletteOpen(current=>!current);
+      } else if(modifier&&!e.shiftKey&&key==="p"){
+        e.preventDefault();window.dispatchEvent(new CustomEvent("control-command",{detail:"open-file"}));
+      } else if(modifier&&e.shiftKey&&key==="f"){
+        e.preventDefault();window.dispatchEvent(new CustomEvent("control-command",{detail:"search-workspace"}));
+      } else if(e.ctrlKey&&key==="`"){
+        e.preventDefault();window.dispatchEvent(new CustomEvent("control-command",{detail:"new-terminal"}));
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isCommandPaletteOpen]);
+  }, []);
 
   const handleCommand = (commandId: string) => {
-    console.log("Executing command:", commandId);
-    // Handle command execution here
-    switch (commandId) {
-      case "open-file":
-        console.log("Opening file...");
-        break;
-      case "search-workspace":
-        console.log("Searching workspace...");
-        break;
-      case "run-tests":
-        console.log("Running tests...");
-        break;
-      case "start-agent":
-        console.log("Starting agent...");
-        break;
-      // Add more command handlers as needed
-    }
+    window.dispatchEvent(new CustomEvent("control-command", { detail: commandId }));
   };
 
   return (

@@ -21,6 +21,7 @@ pub struct FileStatus {
     pub path: String,
     pub status: String,
     pub staged_status: Option<String>,
+    pub has_worktree_changes: bool,
 }
 
 impl GitManager {
@@ -33,11 +34,18 @@ impl GitManager {
         let repo = Repository::open(repo_path)?;
 
         // Get current branch
-        let head = repo.head()?;
-        let branch = head
-            .shorthand()
-            .unwrap_or("HEAD")
-            .to_string();
+        let branch = repo
+            .head()
+            .ok()
+            .and_then(|head| head.shorthand().map(str::to_string))
+            .or_else(|| {
+                repo.find_reference("HEAD").ok().and_then(|head| {
+                    head.symbolic_target()
+                        .and_then(|name| name.rsplit('/').next())
+                        .map(str::to_string)
+                })
+            })
+            .unwrap_or_else(|| "main".to_string());
 
         // Get ahead/behind
         let (ahead, behind) = Self::get_ahead_behind(&repo)?;
@@ -68,6 +76,13 @@ impl GitManager {
             } else {
                 None
             };
+            let has_worktree_changes = status_flags.intersects(
+                git2::Status::WT_NEW
+                    | git2::Status::WT_MODIFIED
+                    | git2::Status::WT_DELETED
+                    | git2::Status::WT_RENAMED
+                    | git2::Status::WT_TYPECHANGE,
+            );
 
             if staged_status.is_some() {
                 staged.push(path.clone());
@@ -79,6 +94,7 @@ impl GitManager {
                     path,
                     status,
                     staged_status,
+                    has_worktree_changes,
                 },
             );
         }
@@ -95,18 +111,21 @@ impl GitManager {
 
     /// Stage file for commit
     pub fn stage_file(repo_path: impl AsRef<Path>, file_path: &str) -> Result<()> {
+        let repo_path = repo_path.as_ref();
         let repo = Repository::open(repo_path)?;
         let mut index = repo.index()?;
-        index.add_path(std::path::Path::new(file_path))?;
+        let relative = std::path::Path::new(file_path);
+        if repo_path.join(relative).exists() {
+            index.add_path(relative)?;
+        } else {
+            index.remove_path(relative)?;
+        }
         index.write()?;
         Ok(())
     }
 
     /// Commit staged changes
-    pub fn commit(
-        repo_path: impl AsRef<Path>,
-        message: &str,
-    ) -> Result<String> {
+    pub fn commit(repo_path: impl AsRef<Path>, message: &str) -> Result<String> {
         let repo = Repository::open(repo_path)?;
         let signature = repo.signature()?;
         let tree_id = {
@@ -115,25 +134,51 @@ impl GitManager {
         };
 
         let tree = repo.find_tree(tree_id)?;
-        let parent_commit = repo.head()?.peel_to_commit()?;
-        let commit_id = repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            message,
-            &tree,
-            &[&parent_commit],
-        )?;
+        let commit_id = match repo.head().ok().and_then(|head| head.peel_to_commit().ok()) {
+            Some(parent) => repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                message,
+                &tree,
+                &[&parent],
+            )?,
+            None => repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &[])?,
+        };
 
         Ok(commit_id.to_string())
     }
 
-    fn get_ahead_behind(_repo: &Repository) -> Result<(u32, u32)> {
-        Ok((0, 0))
+    fn get_ahead_behind(repo: &Repository) -> Result<(u32, u32)> {
+        let head = match repo.head().ok().and_then(|head| head.target()) {
+            Some(head) => head,
+            None => return Ok((0, 0)),
+        };
+        let branch = match repo
+            .head()
+            .ok()
+            .and_then(|head| head.shorthand().map(str::to_string))
+        {
+            Some(branch) => branch,
+            None => return Ok((0, 0)),
+        };
+        let upstream = match repo
+            .find_branch(&branch, git2::BranchType::Local)
+            .ok()
+            .and_then(|branch| branch.upstream().ok())
+            .and_then(|branch| branch.get().target())
+        {
+            Some(upstream) => upstream,
+            None => return Ok((0, 0)),
+        };
+        let (ahead, behind) = repo.graph_ahead_behind(head, upstream)?;
+        Ok((ahead as u32, behind as u32))
     }
 
     fn status_to_string(status: Status) -> String {
-        if status.contains(Status::WT_MODIFIED) || status.contains(Status::INDEX_MODIFIED) {
+        if status.contains(Status::CONFLICTED) {
+            "C".to_string()
+        } else if status.contains(Status::WT_MODIFIED) || status.contains(Status::INDEX_MODIFIED) {
             "M".to_string()
         } else if status.contains(Status::WT_NEW) || status.contains(Status::INDEX_NEW) {
             "A".to_string()
@@ -141,8 +186,6 @@ impl GitManager {
             "D".to_string()
         } else if status.contains(Status::WT_RENAMED) || status.contains(Status::INDEX_RENAMED) {
             "R".to_string()
-        } else if status.contains(Status::CONFLICTED) {
-            "C".to_string()
         } else {
             "?".to_string()
         }
@@ -156,4 +199,67 @@ pub struct CommitInfo {
     pub message: String,
     pub author: String,
     pub timestamp: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supports_an_unborn_repository_and_initial_commit() {
+        let root = std::env::temp_dir().join(format!("control-git-test-{}", uuid::Uuid::new_v4()));
+        let repo = Repository::init(&root).expect("initialize repository");
+        repo.config()
+            .expect("config")
+            .set_str("user.name", "Control Test")
+            .expect("name");
+        repo.config()
+            .expect("config")
+            .set_str("user.email", "control@example.test")
+            .expect("email");
+        std::fs::write(root.join("README.md"), "hello\n").expect("write fixture");
+        GitManager::stage_file(&root, "README.md").expect("stage initial file");
+        let status = GitManager::status(&root).expect("status before first commit");
+        assert!(status.staged.contains(&"README.md".to_string()));
+        GitManager::commit(&root, "Initial commit").expect("initial commit");
+        assert_eq!(
+            repo.head()
+                .expect("head")
+                .peel_to_commit()
+                .expect("commit")
+                .message(),
+            Some("Initial commit")
+        );
+        std::fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn stages_deleted_files() {
+        let root =
+            std::env::temp_dir().join(format!("control-git-delete-test-{}", uuid::Uuid::new_v4()));
+        let repo = Repository::init(&root).expect("initialize repository");
+        repo.config()
+            .expect("config")
+            .set_str("user.name", "Control Test")
+            .expect("name");
+        repo.config()
+            .expect("config")
+            .set_str("user.email", "control@example.test")
+            .expect("email");
+        std::fs::write(root.join("obsolete.txt"), "remove me\n").expect("write fixture");
+        GitManager::stage_file(&root, "obsolete.txt").expect("stage initial file");
+        GitManager::commit(&root, "Add obsolete file").expect("initial commit");
+        std::fs::remove_file(root.join("obsolete.txt")).expect("delete fixture file");
+        GitManager::stage_file(&root, "obsolete.txt").expect("stage deletion");
+        let status = GitManager::status(&root).expect("status after deletion");
+        assert!(status.staged.contains(&"obsolete.txt".to_string()));
+        assert_eq!(
+            status
+                .files
+                .get("obsolete.txt")
+                .map(|file| file.status.as_str()),
+            Some("D")
+        );
+        std::fs::remove_dir_all(&root).expect("remove fixture");
+    }
 }
