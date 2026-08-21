@@ -36,7 +36,10 @@ export type EntityType =
   | "Commit"
   | "Workspace"
   | "Agent"
-  | "AgentRun";
+  | "AgentRun"
+  | "Conversation"
+  | "ConversationMessage"
+  | "ConversationArtifact";
 
 // ─── Core Entity ──────────────────────────────────────────────────
 
@@ -86,7 +89,11 @@ export type RelationshipType =
   | "uses"
   | "integrates_with"
   | "consumes"
-  | "coordinates";
+  | "coordinates"
+  | "linked_to_conversation"
+  | "references_entity"
+  | "creates_artifact"
+  | "includes_message";
 
 // ─── Core Relationship ────────────────────────────────────────────
 
@@ -279,4 +286,156 @@ export interface GitBranchInfo {
   name: string;
   isDefault: boolean;
   head: string;
+}
+
+// ─── Conversation & AI Integration ────────────────────────────────
+
+export type AITargetId =
+  | "gpt-4"
+  | "gpt-3.5-turbo"
+  | "ollama"
+  | "claude-opus"
+  | "claude-sonnet"
+  | "codex"
+  | "opencode"
+  | "developer-agent"
+  | "control"
+  | "auto";
+
+export type ContextMode = "Current" | "Project" | "Global" | "Task" | "Full";
+
+export interface GitStatus {
+  branch: string;
+  isDirty: boolean;
+  uncommittedChanges: string[];
+  stagedChanges: string[];
+  lastCommit?: GitCommitInfo;
+}
+
+export interface CurrentWorkspaceContext {
+  openFiles: string[];
+  selectedText?: string;
+  cursorPosition?: { line: number; col: number };
+  gitStatus?: GitStatus;
+}
+
+export interface ProjectContextData {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+  summary: string;
+  structure: string;
+  dependencies: string;
+  recentFiles: string[];
+  entityCount: number;
+}
+
+export interface GlobalContextData {
+  allProjects: Array<{
+    id: string;
+    name: string;
+  }>;
+  activeAgents: string[];
+  sharedTasks: string[];
+  projectCount: number;
+  agentCount: number;
+  taskCount: number;
+}
+
+export interface TaskContextData {
+  taskId: string;
+  title: string;
+  description: string;
+  relatedFiles: string[];
+  blockedBy: string[];
+  assignedTo: string;
+  estimatedMinutes?: number;
+}
+
+export interface ResolvedContext {
+  mode: ContextMode;
+  currentWorkspace?: CurrentWorkspaceContext;
+  projectContext?: ProjectContextData;
+  globalContext?: GlobalContextData;
+  taskContext?: TaskContextData;
+  injectedMarkdown: string;
+}
+
+export interface EntityReference {
+  type: EntityType;
+  entityId: EntityId;
+  excerpt?: string;
+  line?: number;
+}
+
+export interface ConversationMetadata {
+  projectId?: string;
+  taskId?: string;
+  createdAt: number;
+  updatedAt: number;
+  isArchived: boolean;
+  tags: string[];
+}
+
+export interface ConversationMessageMetadata {
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  duration?: number;
+}
+
+export interface ConversationMessage {
+  id: EntityId;
+  conversationId: EntityId;
+  role: "user" | "assistant" | "system";
+  content: string;
+  target: AITargetId;
+  timestamp: number;
+  index: number;
+  contextUsed?: ResolvedContext;
+  references: EntityReference[];
+  artifacts: EntityId[];
+  metadata?: ConversationMessageMetadata;
+}
+
+export interface ConversationArtifactData {
+  conversationId: EntityId;
+  messageId: EntityId;
+  artifactType: "Task" | "Decision" | "Requirement";
+  linkedEntityId?: EntityId;
+  content: string;
+  createdAt: number;
+}
+
+export interface Conversation {
+  id: EntityId;
+  graphId: GraphId;
+  projectId?: string;
+  taskId?: string;
+  name: string;
+  description?: string;
+  activeTarget: AITargetId;
+  contextMode: ContextMode;
+  metadata: ConversationMetadata;
+  messageCount: number;
+  artifactCount: number;
+  lastMessageAt?: number;
+}
+
+export interface TargetOptions {
+  temperature?: number;
+  maxTokens?: number;
+  stream?: boolean;
+  stopSequences?: string[];
+}
+
+export interface TargetResponse {
+  content: string;
+  target: AITargetId;
+  model?: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+  timestamp: number;
 }
