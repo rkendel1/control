@@ -256,6 +256,7 @@ export function useWorkspace() {
         const record: ControlProject = existing || { ...inspectedProject, createdAt: timestamp, updatedAt: timestamp };
         if (!existing) await database.projects.insert(record, record.id);
         const project = toProject(record);
+        setProjects(current=>current.some(item=>item.id===project.id)?current.map(item=>item.id===project.id?project:item):[...current,project]);
         const settings=await database.settings.get("workspace"),files=settings?.openFilesByProject[project.id]||[];
         setCurrentProject(project);
         setWorkspaceState((prev) => ({
@@ -286,8 +287,8 @@ export function useWorkspace() {
   useEffect(() => {
     void loadProjects();
     const projectsCollection = getControlDatabase().projects;
-    return projectsCollection.subscribe((records) => {
-      setProjects(records.map(toProject));
+    return projectsCollection.subscribe(() => {
+      void projectsCollection.all().then(records=>setProjects(records.map(toProject)));
     });
   }, [loadProjects]);
 

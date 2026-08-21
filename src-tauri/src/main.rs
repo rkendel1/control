@@ -29,6 +29,7 @@ fn main() {
             commands::cmd_launch_forget_projects,
             commands::cmd_self_test_config,
             commands::cmd_project_inspect,
+            commands::cmd_project_create,
             commands::cmd_project_test_command,
             commands::cmd_agent_run_start,
             commands::cmd_agent_run_stop,

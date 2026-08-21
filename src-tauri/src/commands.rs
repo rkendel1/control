@@ -367,6 +367,21 @@ pub fn cmd_project_inspect(
     }))
 }
 
+#[tauri::command]
+pub fn cmd_project_create(location: String, name: String) -> Result<CommandResponse<String>, String> {
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') || !name.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')) {
+        return Ok(CommandResponse::err("Project name may contain letters, numbers, dots, dashes, and underscores".into()));
+    }
+    let home = match std::env::var_os("HOME").map(std::path::PathBuf::from).filter(|path| path.is_dir()) { Some(path) => path, None => return Ok(CommandResponse::err("Home directory is unavailable".into())) };
+    let parent = match location.to_lowercase().as_str() { "desktop" => home.join("Desktop"), "documents" => home.join("Documents"), _ => return Ok(CommandResponse::err("Projects can currently be created in Desktop or Documents".into())) };
+    if !parent.is_dir() { return Ok(CommandResponse::err(format!("{} directory is unavailable", location))); }
+    let project = parent.join(&name);
+    if project.exists() { return Ok(CommandResponse::err(format!("{} already exists", project.display()))); }
+    if let Err(error) = std::fs::create_dir(&project) { return Ok(CommandResponse::err(format!("Could not create project: {error}"))); }
+    let _ = git2::Repository::init(&project);
+    Ok(CommandResponse::ok(project.to_string_lossy().to_string()))
+}
+
 fn detect_test_command(workspace: &std::path::Path) -> Option<String> {
     let package_json = workspace.join("package.json");
     if package_json.is_file() {

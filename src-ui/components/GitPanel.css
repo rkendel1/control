@@ -197,6 +197,7 @@
   border-top: 1px solid #3e3e42;
   margin-top: 8px;
 }
+.commit-section-top{margin:0 0 8px;padding:8px 0 10px;border-top:0;border-bottom:1px solid #324253}
 
 .commit-message {
   background: #1e1e1e;

@@ -10,6 +10,7 @@ import "./CoordinationPanel.css";
 import { getSecretRedactor } from "../lib/core/secret-redactor";
 import {runtimePresetError,type RuntimePreset} from "../lib/runtime-policy";
 import {assessModelRouting} from "../lib/model-routing";
+import {parseCreateProjectIntent} from "../lib/project-intent";
 export type CoordinationTab = "chat" | "intelligence" | "inbox" | "decisions" | "evidence" | "activity";
 type RuntimeAvailability = {
     id: string;
@@ -18,8 +19,9 @@ type RuntimeAvailability = {
     model?: string;
 };
 type ProviderCredentialStatus={provider:string;environmentVariable:string;configured:boolean};
-export default function CoordinationPanel({ project,initialTab="chat",hideNavigation=false,scope="project" }: {
+export default function CoordinationPanel({ project,availableProjects=[project],initialTab="chat",hideNavigation=false,scope="project" }: {
     project: Project;
+    availableProjects?:Project[];
     initialTab?:CoordinationTab;
     hideNavigation?:boolean;
     scope?:"global"|"project";
@@ -35,9 +37,11 @@ export default function CoordinationPanel({ project,initialTab="chat",hideNaviga
     const [editingAgentId,setEditingAgentId]=useState<string>(),[agentDraft,setAgentDraft]=useState({instructions:"",runtime:"auto",preset:"local" as RuntimePreset,timeout:60});
     const [editingIdentity,setEditingIdentity]=useState(false),[identityName,setIdentityName]=useState("");
     const [creatingConversation,setCreatingConversation]=useState(false),[conversationTitle,setConversationTitle]=useState(""),[conversationContextId,setConversationContextId]=useState("");
+    const [conversationScope,setConversationScope]=useState(scope==="global"?"global":project.id);
     const [runtimeAvailability, setRuntimeAvailability] = useState<RuntimeAvailability[]>([]);
     const [providerCredentials,setProviderCredentials]=useState<ProviderCredentialStatus[]>([]),[editingProvider,setEditingProvider]=useState<string>(),[providerSecret,setProviderSecret]=useState("");
     const firstSendInFlight=useRef(false);
+    const fallbackAgent=useMemo<ControlAgent>(()=>({id:"control-intelligence",name:"Control Intelligence",description:"Automatic local-first intelligence",instructions:"Help with planning, brainstorming, project creation, and software work.",capabilities:["planning","implementation"],status:"active",timeoutMinutes:60,executionPolicy:{filesystem:"workspace-write",shell:true,network:true},createdAt:Date.now(),updatedAt:Date.now()}),[]);
     const active = useMemo(() => conversations.find(c => c.id === activeId), [conversations, activeId]);
     useEffect(()=>setTab(initialTab),[initialTab]);
     const refresh = async () => { const [a, t, r, runLog, changes,tests,events, c, d, w, people, inbox, i, e, o,metadata] = await Promise.all([db.agents.all(), db.tasks.find({ projectId: project.id }), db.runs.find({ projectId: project.id }), db.runEvents.find({ projectId: project.id }),db.changeSets.find({projectId:project.id}),db.testResults.find({projectId:project.id}), db.activity.find({ projectId: project.id }), db.conversations.find({ projectId: project.id }), db.decisions.find({ projectId: project.id }), db.works.find({ projectId: project.id }), db.participants.all(), db.inboxItems.find({ projectId: project.id }), db.investigations.find({ projectId: project.id }), db.evidence.find({ projectId: project.id }), db.outcomes.find({ projectId: project.id }),db.metadata.get("database")]); setAgents(a); setParticipants(people); setTasks(t); const orderedRuns=r.sort((x, y) => y.startedAt - x.startedAt); setRuns(orderedRuns); setRunEvents(runLog.sort((x,y)=>x.createdAt-y.createdAt));setChangeSets(changes);setTestResults(tests);setDatabaseMetadata(metadata||undefined); setSelectedRunId(id=>orderedRuns.some(item=>item.id===id)?id:orderedRuns[0]?.id); setActivity(events.sort((x, y) => y.createdAt - x.createdAt)); setConversations(c.sort((x, y) => y.updatedAt - x.updatedAt)); setDecisions(d.sort((x, y) => y.createdAt - x.createdAt)); setWorks(w); setInboxItems(inbox.sort((x, y) => y.createdAt - x.createdAt)); setInvestigations(i.sort((x, y) => y.updatedAt - x.updatedAt)); setEvidence(e.sort((x, y) => y.createdAt - x.createdAt)); setOutcomes(o.sort((x, y) => y.createdAt - x.createdAt)); setActiveId(id => c.some(item => item.id === id) ? id : c[0]?.id); };
@@ -54,14 +58,12 @@ export default function CoordinationPanel({ project,initialTab="chat",hideNaviga
         return db.messages.subscribe(() => void refreshMessages(activeId));
     }, [activeId]);
     const createConversation = async (requestedTitle?:string):Promise<ControlConversation|undefined> => {
-        const activeAgents = agents.filter(item => item.status === "active"), agent = activeAgents.find(item=>item.id==="control-intelligence")||activeAgents[0];
-        if (!agent)
-            {setError("Control Intelligence is unavailable");return;}
+        const activeAgents = agents.filter(item => item.status === "active"), agent = activeAgents.find(item=>item.id==="control-intelligence")||activeAgents[0]||fallbackAgent;
         const title = (requestedTitle||conversationTitle||"New conversation").trim();
         if (!title)
             return;
         if(requestedTitle){
-            const existing=conversations.find(item=>item.title===title&&!item.taskId);
+            const existing=conversations.find(item=>item.title===title&&!item.taskId&&(item.scope||"project")===(conversationScope==="global"?"global":"project"));
             if(existing){setActiveId(existing.id);setTab("chat");setError(undefined);return existing;}
         }
         const agentId = agent.id;
@@ -70,8 +72,9 @@ export default function CoordinationPanel({ project,initialTab="chat",hideNaviga
         if (contextId && !context)
             {setError("Unknown Work context");return;}
         const now = Date.now(), id = createId("conversation"),workId=context?.workId||createId("work");
-        if(!context)await db.works.insert({id:workId,projectId:project.id,title,intent:"Conversation with Control Intelligence",kind:"investigation",status:"active",createdAt:now,updatedAt:now},workId);
-        const conversation={ id, projectId: project.id, workId, taskId: context?.taskId, agentId, intelligenceId:agentId, title, createdAt: now, updatedAt: now };
+        const targetProject=availableProjects.find(item=>item.id===conversationScope)||project;
+        if(!context)await db.works.insert({id:workId,projectId:targetProject.id,title,intent:"Conversation with Control Intelligence",kind:"investigation",status:"active",createdAt:now,updatedAt:now},workId);
+        const conversation:ControlConversation={ id, projectId: targetProject.id, workId, taskId: context?.taskId, agentId, intelligenceId:agentId, title,scope:conversationScope==="global"?"global":"project", createdAt: now, updatedAt: now };
         await db.conversations.insert(conversation, id);
         setActiveId(id);
         setTab("chat");
@@ -82,9 +85,7 @@ export default function CoordinationPanel({ project,initialTab="chat",hideNaviga
         const conversation=conversationOverride||active;
         if (!conversation || !rawContent.trim() || sending)
             return;
-        const agent = agents.find(a => a.id === conversation.agentId);
-        if (!agent)
-            return setError("Control Intelligence is unavailable");
+        const agent = agents.find(a => a.id === conversation.agentId)||fallbackAgent;
         const content = rawContent.trim(), safeContent = safe(content);
         if(!retryMessage)setInput("");
         setSending(true);
@@ -105,13 +106,14 @@ export default function CoordinationPanel({ project,initialTab="chat",hideNaviga
             await db.conversations.update(conversation.id, { updatedAt: now });
             const history = messages.filter(message=>message.id!==userId).slice(-20).map(m => `${m.role}: ${m.content}`).join("\n");
             const task = tasks.find(item => item.id === conversation.taskId), work = works.find(item => item.id === conversation.workId), investigation = investigations.find(item => item.workId === conversation.workId);
-            const instructions = [agent.instructions, work ? `Related Work: ${work.title}\nIntent: ${work.intent}` : "", task ? `Related task: ${task.title}\n${task.description}\nAcceptance criteria:\n${task.acceptanceCriteria.map(item => `- ${item}`).join("\n")}` : "", investigation ? `Investigation: ${investigation.question}\nHypotheses: ${investigation.hypotheses.join("; ")}\nSources: ${investigation.sources.join("; ")}\nContradictions: ${investigation.contradictions.join("; ")}\nGaps: ${investigation.gaps.join("; ")}\nConclusion: ${investigation.conclusion || "open"}` : ""].filter(Boolean).join("\n\n");
+            const targetProject=availableProjects.find(item=>item.id===conversation.projectId)||project;
+            const instructions = [agent.instructions,conversation.scope==="global"?`Global conversation. It is not bound to one repository. Known projects: ${availableProjects.map(item=>`${item.name} (${item.path})`).join(", ")}. Brainstorm freely and ask before changing project files.`:"", work ? `Related Work: ${work.title}\nIntent: ${work.intent}` : "", task ? `Related task: ${task.title}\n${task.description}\nAcceptance criteria:\n${task.acceptanceCriteria.map(item => `- ${item}`).join("\n")}` : "", investigation ? `Investigation: ${investigation.question}\nHypotheses: ${investigation.hypotheses.join("; ")}\nSources: ${investigation.sources.join("; ")}\nContradictions: ${investigation.contradictions.join("; ")}\nGaps: ${investigation.gaps.join("; ")}\nConclusion: ${investigation.conclusion || "open"}` : ""].filter(Boolean).join("\n\n");
             if(!conversation.workId)throw new Error("Conversation Work context is unavailable");
             const conversationRuns=runs.filter(item=>item.conversationId===conversation.id),routing=assessModelRouting({title:content,description:history,failedRuns:conversationRuns.filter(item=>item.status==="failed").length});
             const preferredRuntime=agent.runtime||routing.tier;
             runId=createId("run");await db.runs.insert({id:runId,projectId:project.id,workId:conversation.workId,taskId:conversation.taskId,kind:"conversation",conversationId:conversation.id,requestMessageId:userId,agentId:agent.id,runtime:"resolving",routingTier:routing.tier,routingReason:agent.runtime?`${agent.runtime} — Intelligence profile override`:routing.reason,status:"starting",startedAt:now},runId);
             await db.messages.update(userId,{runId});
-            const response = await invoke<{pid:number;runtime:string;processStartedAt:number}>("cmd_agent_chat", { runId,projectPath: project.path, projectName: project.name, agentName: agent.name, agentInstructions: instructions, history, content, preferredRuntime,executionTimeoutMinutes:agent.timeoutMinutes });
+            const response = await invoke<{pid:number;runtime:string;processStartedAt:number}>("cmd_agent_chat", { runId,projectPath: targetProject.path, projectName: conversation.scope==="global"?"Global workspace":targetProject.name, agentName: agent.name, agentInstructions: instructions, history, content, preferredRuntime,executionTimeoutMinutes:agent.timeoutMinutes });
             if(!response.success||!response.data)throw new Error(response.error || "Agent response failed");
             const launchedRun=await db.runs.get(runId);if(launchedRun?.status==="starting")await db.runs.update(runId,{runtime:response.data.runtime,status:"running",pid:response.data.pid,processStartedAt:response.data.processStartedAt});
             const activityId=createId("activity");await db.activity.insert({id:activityId,projectId:project.id,workId:conversation.workId,taskId:conversation.taskId,runId,type:"conversation_started",actor:agent.id,summary:`${agent.name} started a response in ${conversation.title}`,createdAt:now},activityId);
@@ -128,7 +130,8 @@ export default function CoordinationPanel({ project,initialTab="chat",hideNaviga
             setSending(false);
         }
     };
-    const send=async()=>{if(!input.trim()||sending||firstSendInFlight.current)return;firstSendInFlight.current=true;try{const conversation=active||await createConversation("General");if(conversation)await sendMessage(input,undefined,conversation);}finally{firstSendInFlight.current=false;}};
+    const send=async()=>{if(!input.trim()||sending||firstSendInFlight.current)return;const projectIntent=parseCreateProjectIntent(input);if(projectIntent&&conversationScope==="global"){if(window.confirm(`Create a new Git project named ${projectIntent.name} in ${projectIntent.location[0].toUpperCase()+projectIntent.location.slice(1)} and open it in Control?`)){setInput("");window.dispatchEvent(new CustomEvent("control-create-project",{detail:projectIntent}));}return;}firstSendInFlight.current=true;try{const conversation=active||await createConversation(conversationScope==="global"?"Global":"General");if(conversation)await sendMessage(input,undefined,conversation);}finally{firstSendInFlight.current=false;}};
+    useEffect(()=>{const handler=(event:Event)=>{const detail=(event as CustomEvent<{action:"reply"|"retry";conversationId?:string;title?:string}>).detail;if(!detail.conversationId)return;void (async()=>{const conversation=await db.conversations.get(detail.conversationId!);if(!conversation){setError("The linked conversation is no longer available");return;}setActiveId(conversation.id);setTab("chat");if(detail.action==="reply"){setInput("");window.setTimeout(()=>document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus(),50);return;}const prior=(await db.messages.find({conversationId:conversation.id})).filter(message=>message.role==="user"&&message.deliveryStatus==="failed").sort((a,b)=>b.createdAt-a.createdAt)[0];if(!prior){setError("No failed message is available to retry");return;}await sendMessage(prior.content,prior,conversation);})();};window.addEventListener("control-conversation-action",handler);return()=>window.removeEventListener("control-conversation-action",handler);});
     const answer = async (decision: ControlDecision, value: string) => {
         const answeredAt = Date.now(), safeValue = safe(value);
         await db.decisions.update(decision.id, { status: "answered", answer: safeValue, answeredAt });
@@ -304,9 +307,10 @@ export default function CoordinationPanel({ project,initialTab="chat",hideNaviga
         {!hideNavigation&&<div className="coordination-tabs">{(["chat","intelligence","inbox","decisions","evidence","activity"] as CoordinationTab[]).map(item=><button key={item} className={tab===item?"active":""} onClick={()=>setTab(item)}>{item}{item==="inbox"&&inboxCount?` ${inboxCount}`:""}</button>)}</div>}
         {error&&<div className="coordination-error">{error}</div>}
         {tab==="chat"&&<div className="chat-pane">
+            <div className="conversation-scope"><label>Scope</label><select value={conversationScope} onChange={event=>{setConversationScope(event.target.value);setActiveId(undefined);}}><option value="global">Global · brainstorming and new projects</option>{availableProjects.map(item=><option key={item.id} value={item.id}>Project · {item.name}</option>)}</select></div>
             <div className="conversation-toolbar"><select value={activeId||""} onChange={event=>setActiveId(event.target.value||undefined)}><option value="">No conversation</option>{conversations.map(item=><option key={item.id} value={item.id}>{item.title}{conversations.filter(candidate=>candidate.title===item.title).length>1?` · ${new Date(item.createdAt).toLocaleString()}`:""}</option>)}</select><button title="New conversation" onClick={()=>setCreatingConversation(value=>!value)}>+</button></div>
             {creatingConversation&&<div className="conversation-create"><input autoFocus placeholder="Conversation title" value={conversationTitle} onChange={event=>setConversationTitle(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void createConversation();}}/><select value={conversationContextId} onChange={event=>setConversationContextId(event.target.value)}><option value="">Project conversation</option>{tasks.map(task=><option key={task.id} value={task.id}>Task: {task.title}</option>)}{investigations.map(item=><option key={item.id} value={item.id}>Investigation: {item.question}</option>)}</select><div className="decision-options"><button disabled={!conversationTitle.trim()} onClick={()=>void createConversation()}>Create</button><button onClick={()=>setCreatingConversation(false)}>Cancel</button></div></div>}
-            <div className="conversation-context">{active?`${agents.find(agent=>agent.id===active.agentId)?.name||active.agentId} · ${project.name}${active.taskId?` · ${tasks.find(task=>task.id===active.taskId)?.title||"task"}`:""}`:"Create a project or task conversation"}</div>
+            <div className="conversation-context">{active?`${agents.find(agent=>agent.id===active.agentId)?.name||fallbackAgent.name} · ${active.scope==="global"?"Global":availableProjects.find(item=>item.id===active.projectId)?.name||project.name}${active.taskId?` · ${tasks.find(task=>task.id===active.taskId)?.title||"task"}`:""}`:conversationScope==="global"?"Brainstorm, work across projects, or create a new project in English":`Start a conversation about ${availableProjects.find(item=>item.id===conversationScope)?.name||project.name}`}</div>
             <div className="message-list">{messages.map(message=><div key={message.id} className={`message ${message.role} ${message.deliveryStatus||"delivered"}`}><span className="message-sender">{message.role==="user"?participants.find(item=>item.id===message.senderId)?.name||"You":agents.find(item=>item.id===message.senderId)?.name||message.senderId}{message.deliveryStatus==="pending"?" · sending":message.deliveryStatus==="failed"?" · failed":""}</span><div>{message.content}</div>{message.deliveryStatus==="failed"&&<div className="message-failure"><span>{message.error}</span><button disabled={sending} onClick={()=>void sendMessage(message.content,message)}>Retry</button></div>}</div>)}{sending&&<div className="message-status">Control Intelligence is working…</div>}</div>
             <div className="chat-input"><textarea value={input} onChange={event=>setInput(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();void send();}}} placeholder={active?"Message Control Intelligence…":"Type a message to start a conversation…"} disabled={sending}/><button disabled={!input.trim()||sending} onClick={()=>void send()}>Send</button></div>
         </div>}

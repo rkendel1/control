@@ -97,6 +97,7 @@ export type ControlConversation = {
     title: string;
     createdAt: number;
     updatedAt: number;
+    scope?: "global" | "project";
 };
 export type ControlMessage = {
     id: string;

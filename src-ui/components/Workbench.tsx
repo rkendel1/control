@@ -14,6 +14,7 @@ import { getControlDatabase,LOCAL_PARTICIPANT_ID,type ControlInboxItem } from ".
 import QuickOpen from "./QuickOpen";
 import { refreshOperationalMemory } from "../lib/operational-memory";
 import ControlPanel from "./ControlPanel";
+import {invoke} from "../lib/tauri";
 
 export default function Workbench() {
   useRunEvents();
@@ -89,6 +90,7 @@ export default function Workbench() {
     const handleCommand=(event:Event)=>{const command=(event as CustomEvent<string>).detail;if(command==="open-file")setQuickOpen(true);else if(command==="switch-project"){document.querySelector<HTMLSelectElement>(".project-selector")?.focus();}else if(command==="open-project")void handleAddProject();else if(command==="toggle-terminal-size")setTerminalHeight(height=>height>400?220:Math.min(650,Math.round(window.innerHeight*.55)));};
     window.addEventListener("control-command",handleCommand);return()=>window.removeEventListener("control-command",handleCommand);
   },[openFile]);
+  useEffect(()=>{const handler=(event:Event)=>{const detail=(event as CustomEvent<{location:"desktop"|"documents";name:string}>).detail;void (async()=>{const response=await invoke<string>("cmd_project_create",detail);if(!response.success||!response.data){window.alert(response.error||"Could not create project");return;}if(!await addProject(response.data,detail.name))window.alert("The folder was created, but Control could not open it.");})();};window.addEventListener("control-create-project",handler);return()=>window.removeEventListener("control-create-project",handler);},[addProject]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
