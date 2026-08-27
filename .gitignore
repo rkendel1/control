@@ -25,3 +25,5 @@ src-ui/node_modules/
 
 # Research & marketing files (local only, not pushed to GitHub)
 research/
+src-tauri/.DS_Store
+.gitignore
